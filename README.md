@@ -52,4 +52,4 @@ bun dev
 
 
 ### :star2: **Ejecución**
-http://localhost:3000
+http://localhost:3000/detection
