@@ -14,7 +14,7 @@ ENV/
 *.pyc
 *.sqlite3
 db.sqlite3
-*.pkl
+#*.pkl
 *.joblib
 
 # Migrations (puedes decidir si ignoras todas o no)
