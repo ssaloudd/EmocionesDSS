@@ -1,0 +1,46 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Django stuff
+*.log
+*.pot
+*.pyc
+*.sqlite3
+db.sqlite3
+*.pkl
+*.joblib
+
+# Migrations (puedes decidir si ignoras todas o no)
+**/migrations/
+!**/migrations/__init__.py
+
+# Media / archivos subidos
+media/
+uploads/
+
+# VSCode / IDEs
+.vscode/
+.idea/
+*.swp
+
+# Mac OS
+.DS_Store
+
+# Entornos / configuraciones personales
+.env
+.env.*
+
+# Node (si pones luego frontend aquí)
+node_modules/
+
+# Build / cache
+*.bak
+*.tmp
+*.log
