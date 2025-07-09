@@ -12,11 +12,13 @@ Sistema de detección de emociones en tiempo real usando Django (API), Next.js (
 - Git
 - Bun (para frontend)
 
+- **OJO: Se debe clonar el repositorio en el disco C para que la ruta sea corta y no hayan problemas posteriormente.**
 
 
 ## Clonar el repositorio
+```
 git clone https://github.com/tu_usuario/EmocionesDSS.git
-
+```
 
 
 ### :rocket: **Backend (Django)**
@@ -29,7 +31,10 @@ venv\Scripts\activate
 ```
 
 ###     2. Instalar dependencias
-`pip install -r requirements.txt`
+```
+pip install -r requirements.txt
+pip install tensorflow
+```
 
 ###     3. Aplicar migraciones
 ```
@@ -38,17 +43,18 @@ python manage.py migrate
 ```
 
 ###     4. Ejecutar servidor
-`python manage.py runserver`
-
+```
+python manage.py runserver
+```
 
 
 ### :sunrise: **Frontend (Next.js + Bun)**
+Al mismo tiempo, en una nueva terminal:
 ```
 cd EmocionesDSS/emotion-frontend
 bun install
 bun dev
 ```
-
 
 
 ### :star2: **Ejecución**
