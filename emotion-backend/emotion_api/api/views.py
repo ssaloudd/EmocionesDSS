@@ -280,24 +280,45 @@ class EmocionDetectionAPIView(APIView):
 
 
 
+# Vista para probar la detección de emociones con una imagen subida
 class TestEmotionDetectionView(APIView):
-    parser_classes = [MultiPartParser]
+    parser_classes = [MultiPartParser] # Para recibir archivos (imágenes)
+    # Temporalmente abierto para pruebas
+    authentication_classes = [] 
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         file = request.FILES.get('image')
         if not file:
-            return Response({'error': 'No image provided'}, status=400)
+            return Response({'error': 'No image provided'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Leer imagen desde archivo
-        image_bytes = np.asarray(bytearray(file.read()), dtype=np.uint8)
-        image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
+        try:
+            # Leer imagen desde archivo
+            image_bytes = np.asarray(bytearray(file.read()), dtype=np.uint8)
+            image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
 
-        emocion, confianza = detectar_emocion(image)
+            if image is None:
+                return Response({'error': 'Could not decode image'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if emocion is None:
-            return Response({'error': 'No se detectó rostro'}, status=400)
+            # Llama a detectar_emocion, que ahora devuelve un diccionario
+            emotion_results = detectar_emocion(image)
 
-        return Response({
-            'emocion': emocion,
-            'confianza': confianza
-        })
+            if emotion_results is None:
+                # Si no se detectó rostro o el modelo no está cargado
+                return Response({'message': 'No face detected or model not loaded'}, status=status.HTTP_200_OK)
+            
+            # Extrae los valores del diccionario
+            emocion = emotion_results.get('emocion_predominante')
+            confianza = emotion_results.get('confianza_emocion')
+            datos_raw = emotion_results.get('datos_raw_emociones') # Opcional, si quieres devolverlo también
+
+            # Devuelve la respuesta con los datos extraídos
+            return Response({
+                'emocion': emocion,
+                'confianza': confianza,
+                'datos_raw_emociones': datos_raw # Si quieres que el frontend vea el desglose completo
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            # Captura cualquier error durante el procesamiento
+            return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
