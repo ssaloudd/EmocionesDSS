@@ -32,17 +32,30 @@ venv\Scripts\activate
 
 ###     2. Instalar dependencias
 ```
+cd EmocionesDSS/emotion-backend
 pip install -r requirements.txt
 pip install tensorflow
 ```
 
 ###     3. Aplicar migraciones
 ```
+cd EmocionesDSS/emotion-backend
+venv\Scripts\activate
+
 cd EmocionesDSS/emotion-backend/emotion_api
+python manage.py makemigrations api
 python manage.py migrate
 ```
 
-###     4. Ejecutar servidor
+###     4. Crear super-usuario
+Aún dentro del directorio `EmocionesDSS/emotion-backend/emotion_api` se puede crear el usuario administrador:
+```
+python manage.py createsuperuser
+```
+Llenar con los datos pedidos en consola (para desarrollo solo poner como `Username: admin`, `Email address: admin@admin.com` y `Password: admin`)
+
+###     5. Ejecutar servidor
+Con el entorno virtual activo:
 ```
 python manage.py runserver
 ```
