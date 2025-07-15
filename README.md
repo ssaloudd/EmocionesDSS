@@ -20,6 +20,8 @@ Sistema de detección de emociones en tiempo real usando Django (API), Next.js (
 git clone https://github.com/tu_usuario/EmocionesDSS.git
 ```
 
+## Descargar modelo
+En la ruta `EmocionesDSS\emotion-backend\emotion_api\api\ml_model` se debe ubicar el modelo que se encuentra en el enlace: https://drive.google.com/drive/folders/1eKtrCaJ3dMSHyqR6pkPUteu6xrN7C7tJ?usp=sharing
 
 ### :rocket: **Backend (Django)**
 
@@ -31,8 +33,8 @@ venv\Scripts\activate
 ```
 
 ###     2. Instalar dependencias
+Con el entorno virtual activo se ejecuta:
 ```
-cd EmocionesDSS/emotion-backend
 pip install -r requirements.txt
 pip install tensorflow
 ```
@@ -55,7 +57,7 @@ python manage.py createsuperuser
 Llenar con los datos pedidos en consola (para desarrollo solo poner como `Username: admin`, `Email address: admin@admin.com` y `Password: admin`)
 
 ###     5. Ejecutar servidor
-Con el entorno virtual activo:
+Con el entorno virtual activo y en la ruta `EmocionesDSS/emotion-backend/emotion_api`:
 ```
 python manage.py runserver
 ```
@@ -71,4 +73,8 @@ bun dev
 
 
 ### :star2: **Ejecución**
+- Para acceder al panel de administrador, se ingresa en el navegador:
+http://localhost:3000/dashboard/admin
+
+- Para probar el modelo de detección de emociones:
 http://localhost:3000/detection

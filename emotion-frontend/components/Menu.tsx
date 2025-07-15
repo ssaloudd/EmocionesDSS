@@ -27,12 +27,12 @@ const menuItems = [
         href: "/dashboard/list/students",
         visible: ["admin", "teacher"],
       },
-      {
+      /*{
         icon: "/nivel.png",
         label: "Niveles",
         href: "/dashboard/list/niveles/",
         visible: ["admin", "teacher"],
-      },
+      },*/
       {
         icon: "/materias.png",
         label: "Materias",

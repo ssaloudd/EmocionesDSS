@@ -9,7 +9,7 @@ import os
 EMOTIONS = ['Disgusto', 'Enojo', 'Felicidad', 'Miedo', 'Neutral', 'Sorpresa', 'Tristeza']
 
 BASE_DIR_ML = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR_ML, '3-5_personalizado_best_v1.keras')
+MODEL_PATH = os.path.join(BASE_DIR_ML, '3-5_personalizado_best_v2.keras')
 
 # Cargar modelo entrenado CNN
 try:
