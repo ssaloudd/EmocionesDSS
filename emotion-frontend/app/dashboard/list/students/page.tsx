@@ -116,13 +116,13 @@ const StudentListPage = () => {
             <>
               {/* Aquí especificamos los tipos genéricos para FormModal */}
               <FormModal<Usuario, CreateUpdateUsuarioPayload>
-                table="user"
+                table="student"
                 type="update"
                 data={item}
                 onSubmit={(formData) => handleFormSubmit('update', formData, item.id)}
               />
               <FormModal<Usuario, CreateUpdateUsuarioPayload>
-                table="user"
+                table="student"
                 type="delete"
                 id={item.id}
                 onConfirm={() => handleDelete(item.id)}
