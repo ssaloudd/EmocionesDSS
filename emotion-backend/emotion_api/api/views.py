@@ -5,9 +5,10 @@ from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, AllowAny # Importa permisos
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 
 from .models import (
     Usuario,
@@ -26,8 +27,12 @@ from .serializers import (
     NivelSerializer,
     MateriaWriteSerializer,
     MateriaReadSerializer,
-    CursoAlumnoSerializer,
-    CursoDocenteSerializer,
+    CursoAlumnoReadSerializer,  # Nuevo serializador de lectura
+    CursoAlumnoWriteSerializer, # Nuevo serializador de escritura
+    BulkEnrollmentSerializer,    # Nuevo serializador para bulk
+    CursoDocenteReadSerializer,  # Nuevo serializador de lectura
+    CursoDocenteWriteSerializer, # Nuevo serializador de escritura
+    BulkAssignmentSerializer,    # Nuevo serializador para bulk
     ActividadSerializer,
     SesionActividadSerializer,
     AnalisisEmocionSerializer,
@@ -38,6 +43,7 @@ import base64
 import cv2
 import numpy as np
 from datetime import datetime
+from django.db import IntegrityError # Importa IntegrityError para manejar duplicados
 from .ml_model.detector import detectar_emocion
 
 
@@ -124,28 +130,137 @@ class MateriaViewSet(viewsets.ModelViewSet):
         # Para POST, PUT, PATCH (crear, actualizar), usa MateriaWriteSerializer
         return MateriaWriteSerializer
 
+
+
 # ViewSet para la relación CursoAlumno
 class CursoAlumnoViewSet(viewsets.ModelViewSet):
     queryset = CursoAlumno.objects.all()
-    serializer_class = CursoAlumnoSerializer
-    # permission_classes = [IsAuthenticated]
+    # No definimos serializer_class directamente aquí
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
-    # Filtrar para que un alumno solo vea sus propios cursos
-    def get_queryset(self):
-        if self.request.user.is_authenticated and self.request.user.rol == 'alumno':
-            return CursoAlumno.objects.filter(alumno=self.request.user)
-        return super().get_queryset()
+    def get_serializer_class(self):
+        if self.action in ['list', 'retrieve']:
+            return CursoAlumnoReadSerializer
+        # Para las acciones de creación/actualización normales, usa el serializador de escritura
+        if self.action in ['create', 'update', 'partial_update']:
+            return CursoAlumnoWriteSerializer
+        # Para la acción 'bulk_enroll', usa su serializador específico
+        if self.action == 'bulk_enroll':
+            return BulkEnrollmentSerializer
+        return CursoAlumnoReadSerializer # Fallback
+
+    # Acción personalizada para inscripción masiva de alumnos
+    # URL: /api/curso-alumnos/bulk_enroll/
+    @action(detail=False, methods=['post'])
+    def bulk_enroll(self, request):
+        serializer = BulkEnrollmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        materia_id = serializer.validated_data['materia_id']
+        alumno_ids = serializer.validated_data['alumno_ids']
+
+        # Obtener la materia y los alumnos
+        materia = Materia.objects.get(id=materia_id)
+        alumnos = Usuario.objects.filter(id__in=alumno_ids, rol='alumno')
+
+        created_enrollments = []
+        errors = []
+
+        for alumno in alumnos:
+            try:
+                # Crear o obtener la inscripción si ya existe
+                curso_alumno, created = CursoAlumno.objects.get_or_create(
+                    alumno=alumno,
+                    materia=materia,
+                    defaults={'fecha_inscripcion': datetime.now().date()} # Default si se crea
+                )
+                if created:
+                    created_enrollments.append(curso_alumno)
+                else:
+                    errors.append(f"El alumno {alumno.first_name} {alumno.last_name} ya está inscrito en esta materia.")
+            except IntegrityError:
+                errors.append(f"Error de integridad al inscribir al alumno {alumno.first_name} {alumno.last_name}.")
+            except Exception as e:
+                errors.append(f"Error inesperado al inscribir al alumno {alumno.first_name} {alumno.last_name}: {str(e)}.")
+
+        if created_enrollments:
+            # Serializar las inscripciones creadas/actualizadas para la respuesta
+            response_serializer = CursoAlumnoReadSerializer(created_enrollments, many=True)
+            return Response({
+                "message": "Operación de inscripción masiva completada.",
+                "created_count": len(created_enrollments),
+                "errors": errors,
+                "enrollments": response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                "message": "No se crearon nuevas inscripciones.",
+                "errors": errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
 
 # ViewSet para la relación CursoDocente
 class CursoDocenteViewSet(viewsets.ModelViewSet):
     queryset = CursoDocente.objects.all()
-    serializer_class = CursoDocenteSerializer
-    # permission_classes = [IsAuthenticated]
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
-    # Filtrar para que un docente solo vea sus propios cursos
-    def get_queryset(self):
-        if self.request.user.is_authenticated and self.request.user.rol == 'docente':
-            return CursoDocente.objects.filter(docente=self.request.user)
+    def get_serializer_class(self):
+        if self.action in ['list', 'retrieve']:
+            return CursoDocenteReadSerializer
+        if self.action in ['create', 'update', 'partial_update']:
+            return CursoDocenteWriteSerializer
+        if self.action == 'bulk_assign':
+            return BulkAssignmentSerializer
+        return CursoDocenteReadSerializer # Fallback
+
+    # Acción personalizada para asignación masiva de docentes
+    # URL: /api/curso-docentes/bulk_assign/
+    @action(detail=False, methods=['post'])
+    def bulk_assign(self, request):
+        serializer = BulkAssignmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        materia_id = serializer.validated_data['materia_id']
+        docente_ids = serializer.validated_data['docente_ids']
+
+        materia = Materia.objects.get(id=materia_id)
+        docentes = Usuario.objects.filter(id__in=docente_ids, rol='docente')
+
+        created_assignments = []
+        errors = []
+
+        for docente in docentes:
+            try:
+                curso_docente, created = CursoDocente.objects.get_or_create(
+                    docente=docente,
+                    materia=materia
+                )
+                if created:
+                    created_assignments.append(curso_docente)
+                else:
+                    errors.append(f"El docente {docente.first_name} {docente.last_name} ya está asignado a esta materia.")
+            except IntegrityError:
+                errors.append(f"Error de integridad al asignar al docente {docente.first_name} {docente.last_name}.")
+            except Exception as e:
+                errors.append(f"Error inesperado al asignar al docente {docente.first_name} {docente.last_name}: {str(e)}.")
+
+        if created_assignments:
+            response_serializer = CursoDocenteReadSerializer(created_assignments, many=True)
+            return Response({
+                "message": "Operación de asignación masiva completada.",
+                "created_count": len(created_assignments),
+                "errors": errors,
+                "assignments": response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                "message": "No se crearon nuevas asignaciones.",
+                "errors": errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 # ViewSet para el modelo Actividad
 class ActividadViewSet(viewsets.ModelViewSet):

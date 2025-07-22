@@ -16,10 +16,14 @@ class UsuarioSerializer(serializers.ModelSerializer):
             'rol'
         ]
 
+
+
 class NivelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Nivel
         fields = '__all__'
+
+
 
 # --- Serializadores de Materia (Separados para Lectura y Escritura) ---
 
@@ -42,22 +46,98 @@ class MateriaReadSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class CursoAlumnoSerializer(serializers.ModelSerializer):
-    # Para la lectura, ver los detalles del alumno y la materia.
-    alumno = UsuarioSerializer(read_only=True)
+
+# --- Serializadores de CursoAlumno (Separados para Lectura y Escritura) ---
+
+# Serializador para la lectura de CursoAlumno (GET): Anida objetos completos de Alumno (Usuario) y Materia
+class CursoAlumnoReadSerializer(serializers.ModelSerializer):
+    # Usamos UsuarioSerializer para el alumno
+    alumno = UsuarioSerializer(read_only=True) 
+    # Usamos MateriaReadSerializer para la materia
     materia = MateriaReadSerializer(read_only=True)
 
     class Meta:
         model = CursoAlumno
         fields = '__all__'
 
-class CursoDocenteSerializer(serializers.ModelSerializer):
+# Serializador para la escritura de CursoAlumno (POST, PUT, PATCH): Espera IDs para las relaciones FK
+class CursoAlumnoWriteSerializer(serializers.ModelSerializer):
+    alumno = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.filter(rol='alumno'))
+    materia = serializers.PrimaryKeyRelatedField(queryset=Materia.objects.all())
+
+    class Meta:
+        model = CursoAlumno
+        fields = '__all__'
+
+# Serializador para operación de inscripción masiva de alumnos: Espera ID de materia y una lista de IDs de alumnos
+class BulkEnrollmentSerializer(serializers.Serializer):
+    materia_id = serializers.IntegerField() # El ID de la materia
+    alumno_ids = serializers.ListField(
+        child=serializers.IntegerField(), # Una lista de IDs enteros
+        min_length=1 # Al menos un alumno debe ser seleccionado
+    )
+
+    def validate_materia_id(self, value):
+        # Validar que la materia exista
+        try:
+            Materia.objects.get(id=value)
+        except Materia.DoesNotExist:
+            raise serializers.ValidationError("La materia especificada no existe.")
+        return value
+    
+    def validate_alumno_ids(self, values):
+        # Validar que todos los IDs de alumnos existan y tengan el rol 'alumno'
+        existing_alumno_ids = Usuario.objects.filter(id__in=values, rol='alumno').values_list('id', flat=True)
+        if len(existing_alumno_ids) != len(values):
+            missing_ids = set(values) - set(existing_alumno_ids)
+            raise serializers.ValidationError(f"Algunos IDs de alumnos no son válidos o no tienen el rol 'alumno': {list(missing_ids)}")
+        return values
+
+
+
+# --- Serializadores de CursoDocente (Separados para Lectura y Escritura) ---
+
+# Serializador para la lectura de CursoDocente (GET): Anida objetos completos de Docente (Usuario) y Materia
+class CursoDocenteReadSerializer(serializers.ModelSerializer):
     docente = UsuarioSerializer(read_only=True)
     materia = MateriaReadSerializer(read_only=True)
 
     class Meta:
         model = CursoDocente
         fields = '__all__'
+
+# Serializador para la escritura de CursoDocente (POST, PUT, PATCH): Espera IDs para las relaciones FK
+class CursoDocenteWriteSerializer(serializers.ModelSerializer):
+    docente = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.filter(rol='docente'))
+    materia = serializers.PrimaryKeyRelatedField(queryset=Materia.objects.all())
+
+    class Meta:
+        model = CursoDocente
+        fields = '__all__'
+
+# Serializador para la operación de asignación masiva de docentes: Espera ID de materia y una lista de IDs de docentes
+class BulkAssignmentSerializer(serializers.Serializer):
+    materia_id = serializers.IntegerField()
+    docente_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        min_length=1
+    )
+
+    def validate_materia_id(self, value):
+        try:
+            Materia.objects.get(id=value)
+        except Materia.DoesNotExist:
+            raise serializers.ValidationError("La materia especificada no existe.")
+        return value
+    
+    def validate_docente_ids(self, values):
+        existing_docente_ids = Usuario.objects.filter(id__in=values, rol='docente').values_list('id', flat=True)
+        if len(existing_docente_ids) != len(values):
+            missing_ids = set(values) - set(existing_docente_ids)
+            raise serializers.ValidationError(f"Algunos IDs de docentes no son válidos o no tienen el rol 'docente': {list(missing_ids)}")
+        return values
+
+
 
 class ActividadSerializer(serializers.ModelSerializer):
     materia = MateriaReadSerializer(read_only=True) # Anida los detalles de la materia

@@ -9,6 +9,9 @@ import { useState } from "react";
 import { Materia, CreateUpdateMateriaPayload } from '@/lib/api/subjects';
 import { Usuario, CreateUpdateUsuarioPayload } from '@/lib/api/users';
 import { Nivel, CreateUpdateNivelPayload } from '@/lib/api/niveles';
+// Importa los payloads para las operaciones bulk
+import { BulkEnrollmentPayload } from '@/lib/api/curso_alumnos';
+import { BulkAssignmentPayload } from '@/lib/api/curso_docentes';
 
 // Importa las interfaces de props de los formularios internos
 import { SubjectFormProps } from "./forms/SubjectForm";
@@ -16,6 +19,8 @@ import { UserFormProps } from "./forms/UserForm";
 import { TeacherFormProps } from "./forms/TeacherForm";
 import { StudentFormProps } from "./forms/StudentForm";
 import { NivelFormProps } from "./forms/NivelForm";
+import { CourseEnrollmentFormProps } from "./forms/CourseEnrollmentForm";
+import { CourseAssignmentFormProps } from "./forms/CourseAssignmentForm";
 
 // USE LAZY LOADING para los formularios
 // Los componentes dinámicos no necesitan ser genéricos aquí, solo sus props
@@ -34,6 +39,12 @@ const NivelForm = dynamic(() => import("./forms/NivelForm"), {
 const SubjectForm = dynamic(() => import("./forms/SubjectForm"), {
   loading: () => <h1>Cargando formulario de Materia...</h1>,
 });
+const CourseEnrollmentForm = dynamic<CourseEnrollmentFormProps>(() => import("./forms/CourseEnrollmentForm"), {
+  loading: () => <h1>Cargando formulario de Inscripción...</h1>,
+});
+const CourseAssignmentForm = dynamic<CourseAssignmentFormProps>(() => import("./forms/CourseAssignmentForm"), {
+  loading: () => <h1>Cargando formulario de Asignación...</h1>,
+});
 
 // Mapeo de nombres de tabla a componentes de formulario.
 // Ahora, el valor es el componente React en sí, no una función que lo renderiza.
@@ -43,6 +54,8 @@ const forms = {
   subject: SubjectForm,
   nivel: NivelForm,
   user: UserForm,
+  "course-enrollment": CourseEnrollmentForm, // Añade el nuevo formulario
+  "course-assignment": CourseAssignmentForm, // Añade el nuevo formulario
   // Se añade otros formularios aquí...
 };
 
@@ -120,6 +133,12 @@ const FormModal = <TData, TPayload>(
           typedData = data as Usuario | undefined;
         } else if (table === "nivel") {
           typedData = data as Nivel | undefined;
+        } else if (
+          table === "course-enrollment" ||
+          table === "course-assignment"
+        ) {
+          // Para estos formularios, 'data' no se usa para precargar, pero se mantiene el tipo
+          typedData = undefined; // O el tipo de dato específico si se fuera a usar
         }
 
         // Se añade más 'else if' para otros tipos de tabla

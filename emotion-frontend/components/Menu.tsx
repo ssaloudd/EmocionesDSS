@@ -8,13 +8,25 @@ import { title } from "process";
 
 const menuItems = [
   {
-    title: "MENU",
+    title: "MENU GENERAL",
     items: [
       {
         icon: "/home.png",
         label: "Home",
         href: "/dashboard/admin",
         visible: ["admin"],
+      },
+      {
+        icon: "/nivel.png",
+        label: "Niveles",
+        href: "/dashboard/list/niveles/",
+        visible: ["admin", "teacher"],
+      },
+      {
+        icon: "/materias.png",
+        label: "Materias",
+        href: "/dashboard/list/subjects/",
+        visible: ["admin", "teacher", "student"],
       },
       {
         icon: "/teacher.png",
@@ -83,23 +95,17 @@ const menuItems = [
     title: "CURSOS",
     items: [
       {
-        icon: "/nivel.png",
-        label: "Niveles",
-        href: "/dashboard/list/niveles/",
+        icon: "/claseDoc.png",
+        label: "Cursos de Docentes",
+        href: "/dashboard/list/course-assignments",
         visible: ["admin", "teacher"],
       },
       {
-        icon: "/materias.png",
-        label: "Materias",
-        href: "/dashboard/list/subjects/",
-        visible: ["admin", "teacher", "student"],
-      },
-      /*{
-        icon: "/class.png",
-        label: "Clases",
-        href: "/list/classes",
+        icon: "/claseAlu.png",
+        label: "Cursos de Alumnos",
+        href: "/dashboard/list/course-enrollments",
         visible: ["admin", "teacher"],
-      },*/
+      },
     ],
   },
   {
