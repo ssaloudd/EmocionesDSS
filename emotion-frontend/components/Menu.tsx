@@ -4,6 +4,7 @@ import { role } from "../lib/data";
 // export const role = "admin"; // or dynamically set based on your app logic
 import Image from "next/image";
 import Link from "next/link";
+import { title } from "process";
 
 const menuItems = [
   {
@@ -27,24 +28,7 @@ const menuItems = [
         href: "/dashboard/list/students",
         visible: ["admin", "teacher"],
       },
-      /*{
-        icon: "/nivel.png",
-        label: "Niveles",
-        href: "/dashboard/list/niveles/",
-        visible: ["admin", "teacher"],
-      },*/
-      {
-        icon: "/materias.png",
-        label: "Materias",
-        href: "/dashboard/list/subjects/",
-        visible: ["admin", "teacher", "student"],
-      },
-      /*{
-        icon: "/class.png",
-        label: "Clases",
-        href: "/list/classes",
-        visible: ["admin", "teacher"],
-      },*/
+
       /*{
         icon: "/lesson.png",
         label: "Lecciones",
@@ -96,7 +80,30 @@ const menuItems = [
     ],
   },
   {
-    title: "OTHER",
+    title: "CURSOS",
+    items: [
+      {
+        icon: "/nivel.png",
+        label: "Niveles",
+        href: "/dashboard/list/niveles/",
+        visible: ["admin", "teacher"],
+      },
+      {
+        icon: "/materias.png",
+        label: "Materias",
+        href: "/dashboard/list/subjects/",
+        visible: ["admin", "teacher", "student"],
+      },
+      /*{
+        icon: "/class.png",
+        label: "Clases",
+        href: "/list/classes",
+        visible: ["admin", "teacher"],
+      },*/
+    ],
+  },
+  {
+    title: "OTROS",
     items: [
       /*{
         icon: "/profile.png",

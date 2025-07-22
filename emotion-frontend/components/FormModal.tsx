@@ -8,13 +8,14 @@ import { useState } from "react";
 // Importa las interfaces necesarias
 import { Materia, CreateUpdateMateriaPayload } from '@/lib/api/subjects';
 import { Usuario, CreateUpdateUsuarioPayload } from '@/lib/api/users';
+import { Nivel, CreateUpdateNivelPayload } from '@/lib/api/niveles';
 
 // Importa las interfaces de props de los formularios internos
 import { SubjectFormProps } from "./forms/SubjectForm";
 import { UserFormProps } from "./forms/UserForm";
 import { TeacherFormProps } from "./forms/TeacherForm";
 import { StudentFormProps } from "./forms/StudentForm";
-
+import { NivelFormProps } from "./forms/NivelForm";
 
 // USE LAZY LOADING para los formularios
 // Los componentes dinámicos no necesitan ser genéricos aquí, solo sus props
@@ -24,11 +25,14 @@ const TeacherForm = dynamic(() => import("./forms/TeacherForm"), {
 const StudentForm = dynamic(() => import("./forms/StudentForm"), {
   loading: () => <h1>Cargando formulario de Estudiante...</h1>,
 });
-const SubjectForm = dynamic(() => import("./forms/SubjectForm"), {
-  loading: () => <h1>Cargando formulario de Materia...</h1>,
-});
 const UserForm = dynamic(() => import("./forms/UserForm"), {
   loading: () => <h1>Cargando formulario de Usuario...</h1>,
+});
+const NivelForm = dynamic(() => import("./forms/NivelForm"), {
+  loading: () => <h1>Cargando formulario de Nivel...</h1>,
+});
+const SubjectForm = dynamic(() => import("./forms/SubjectForm"), {
+  loading: () => <h1>Cargando formulario de Materia...</h1>,
 });
 
 // Mapeo de nombres de tabla a componentes de formulario.
@@ -37,8 +41,9 @@ const forms = {
   teacher: TeacherForm,
   student: StudentForm,
   subject: SubjectForm,
+  nivel: NivelForm,
   user: UserForm,
-  // Añade otros formularios aquí según los necesites
+  // Se añade otros formularios aquí...
 };
 
 // Define los tipos de tabla que tienen un formulario asociado
@@ -113,8 +118,11 @@ const FormModal = <TData, TPayload>(
           table === "student"
         ) {
           typedData = data as Usuario | undefined;
+        } else if (table === "nivel") {
+          typedData = data as Nivel | undefined;
         }
-        // Añade más 'else if' para otros tipos de tabla si los tienes
+
+        // Se añade más 'else if' para otros tipos de tabla
 
         return (
           <SpecificForm
