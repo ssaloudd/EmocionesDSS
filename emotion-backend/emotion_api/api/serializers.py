@@ -139,15 +139,28 @@ class BulkAssignmentSerializer(serializers.Serializer):
 
 
 
-class ActividadSerializer(serializers.ModelSerializer):
-    materia = MateriaReadSerializer(read_only=True) # Anida los detalles de la materia
+# --- Serializadores de Actividad ---
+
+# Serializador para escritura de Actividad (POST, PUT, PATCH): Espera ID de la Materia para la relación FK
+class ActividadWriteSerializer(serializers.ModelSerializer):
+    materia = serializers.PrimaryKeyRelatedField(queryset=Materia.objects.all())
 
     class Meta:
         model = Actividad
         fields = '__all__'
 
+# Serializador para lectura de Actividad (GET): Anida el objeto Materia completo usando MateriaReadSerializer
+class ActividadReadSerializer(serializers.ModelSerializer):
+    materia = MateriaReadSerializer() # Anidamos el serializador de Materia para lectura
+
+    class Meta:
+        model = Actividad
+        fields = '__all__'
+
+
+
 class SesionActividadSerializer(serializers.ModelSerializer):
-    actividad = ActividadSerializer(read_only=True) # Anida los detalles de la actividad
+    actividad = ActividadReadSerializer(read_only=True) # Anida los detalles de la actividad
     alumno = UsuarioSerializer(read_only=True)     # Anida los detalles del alumno
 
     class Meta:

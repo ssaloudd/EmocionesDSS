@@ -12,6 +12,7 @@ import { Nivel, CreateUpdateNivelPayload } from '@/lib/api/niveles';
 // Importa los payloads para las operaciones bulk
 import { BulkEnrollmentPayload } from '@/lib/api/curso_alumnos';
 import { BulkAssignmentPayload } from '@/lib/api/curso_docentes';
+import { Actividad, CreateUpdateActividadPayload } from '@/lib/api/actividades'; 
 
 // Importa las interfaces de props de los formularios internos
 import { SubjectFormProps } from "./forms/SubjectForm";
@@ -21,6 +22,7 @@ import { StudentFormProps } from "./forms/StudentForm";
 import { NivelFormProps } from "./forms/NivelForm";
 import { CourseEnrollmentFormProps } from "./forms/CourseEnrollmentForm";
 import { CourseAssignmentFormProps } from "./forms/CourseAssignmentForm";
+import { ActivityFormProps } from "./forms/ActivityForm";
 
 // USE LAZY LOADING para los formularios
 // Los componentes dinámicos no necesitan ser genéricos aquí, solo sus props
@@ -45,6 +47,9 @@ const CourseEnrollmentForm = dynamic<CourseEnrollmentFormProps>(() => import("./
 const CourseAssignmentForm = dynamic<CourseAssignmentFormProps>(() => import("./forms/CourseAssignmentForm"), {
   loading: () => <h1>Cargando formulario de Asignación...</h1>,
 });
+const ActivityForm = dynamic<ActivityFormProps>(() => import("./forms/ActivityForm"), {
+  loading: () => <h1>Cargando formulario de Actividad...</h1>,
+});
 
 // Mapeo de nombres de tabla a componentes de formulario.
 // Ahora, el valor es el componente React en sí, no una función que lo renderiza.
@@ -54,8 +59,9 @@ const forms = {
   subject: SubjectForm,
   nivel: NivelForm,
   user: UserForm,
-  "course-enrollment": CourseEnrollmentForm, // Añade el nuevo formulario
-  "course-assignment": CourseAssignmentForm, // Añade el nuevo formulario
+  "course-enrollment": CourseEnrollmentForm,
+  "course-assignment": CourseAssignmentForm,
+  activity: ActivityForm,
   // Se añade otros formularios aquí...
 };
 
@@ -70,6 +76,7 @@ interface FormModalProps<TData, TPayload> {
   id?: number;
   onSubmit?: (formData: TPayload) => void;
   onConfirm?: () => void;
+  materiaId?: number;
 }
 
 // El componente FormModal ahora es genérico
@@ -81,6 +88,7 @@ const FormModal = <TData, TPayload>(
     id,
     onSubmit,
     onConfirm,
+    materiaId,
   }: FormModalProps<TData, TPayload>
 ) => {
   const size = type === "create" ? "w-8 h-8" : "w-7 h-7";
@@ -139,6 +147,9 @@ const FormModal = <TData, TPayload>(
         ) {
           // Para estos formularios, 'data' no se usa para precargar, pero se mantiene el tipo
           typedData = undefined; // O el tipo de dato específico si se fuera a usar
+        } else if (table === "activity") {
+          // Nuevo caso para actividad
+          typedData = data as Actividad | undefined;
         }
 
         // Se añade más 'else if' para otros tipos de tabla
@@ -149,6 +160,7 @@ const FormModal = <TData, TPayload>(
             data={typedData} // Usamos el data casteado
             onSubmit={onSubmit as (formData: any) => void}
             onClose={handleCloseModal}
+            materiaId={materiaId} // Pasa materiaId al formulario si existe
           />
         );
       } else {

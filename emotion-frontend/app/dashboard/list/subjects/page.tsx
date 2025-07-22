@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import Link from 'next/link';
 import {
   getSubjects,
   deleteSubject,
@@ -17,7 +18,8 @@ import TableSearch from "@/components/TableSearch";
 const role = "admin"; // Simulación del rol para desarrollo
 
 import Image from "next/image";
-import { faBook } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faBook, faEye } from "@fortawesome/free-solid-svg-icons";
 
 // Definición de las columnas para la tabla
 const columns = [
@@ -116,6 +118,11 @@ const SubjectListPage = () => {
       <td className="p-4">{item.nivel ? item.nivel.nombre : 'N/A'}</td>
       <td>
         <div className="flex items-center gap-2">
+          <Link href={`/dashboard/list/subjects/${item.id}/actividades`} passHref>
+            <button className="w-7 h-7 flex items-center justify-center rounded-full bg-blue-500 text-white hover:bg-blue-600 transition-colors">
+              <FontAwesomeIcon icon={faEye} size="sm" />
+            </button>
+          </Link>
           {role === "admin" && (
             <>
               <FormModal<Materia, CreateUpdateMateriaPayload>

@@ -33,7 +33,8 @@ from .serializers import (
     CursoDocenteReadSerializer,  # Nuevo serializador de lectura
     CursoDocenteWriteSerializer, # Nuevo serializador de escritura
     BulkAssignmentSerializer,    # Nuevo serializador para bulk
-    ActividadSerializer,
+    ActividadWriteSerializer, # Importa el serializador de escritura
+    ActividadReadSerializer,  # Importa el serializador de lectura
     SesionActividadSerializer,
     AnalisisEmocionSerializer,
     CalificacionSerializer
@@ -265,8 +266,59 @@ class CursoDocenteViewSet(viewsets.ModelViewSet):
 # ViewSet para el modelo Actividad
 class ActividadViewSet(viewsets.ModelViewSet):
     queryset = Actividad.objects.all()
-    serializer_class = ActividadSerializer
-    # permission_classes = [IsAuthenticated]
+        
+    # --- PERMISOS TEMPORALES PARA DESARROLLO ---
+    authentication_classes = [] 
+    permission_classes = [AllowAny] 
+    # --- FIN PERMISOS TEMPORALES ---
+
+    def get_serializer_class(self):
+        # Si la solicitud es GET (para listar o recuperar), usa ActividadReadSerializer
+        if self.action in ['list', 'retrieve']:
+            return ActividadReadSerializer
+        # Para POST, PUT, PATCH (crear, actualizar), usa ActividadWriteSerializer
+        return ActividadWriteSerializer
+
+    def get_queryset(self):
+        queryset = Actividad.objects.all()
+        
+        # Obtener el parámetro 'materia' de la URL de la solicitud (ej. /api/actividades/?materia=1)
+        materia_id = self.request.query_params.get('materia', None)
+        if materia_id is not None:
+            # Filtrar el queryset si se proporciona un ID de materia
+            queryset = queryset.filter(materia_id=materia_id)
+            
+        # Lógica de permisos para el futuro:
+        # if self.request.user.is_authenticated:
+        #     if self.request.user.rol == 'docente':
+        #         # Un docente solo ve actividades de sus materias
+        #         materias_docente_ids = CursoDocente.objects.filter(docente=self.request.user).values_list('materia__id', flat=True)
+        #         queryset = queryset.filter(materia__id__in=materias_docente_ids)
+        #     elif self.request.user.rol == 'alumno':
+        #         # Un alumno solo ve actividades de las materias en las que está inscrito
+        #         materias_alumno_ids = CursoAlumno.objects.filter(alumno=self.request.user).values_list('materia__id', flat=True)
+        #         queryset = queryset.filter(materia__id__in=materias_alumno_ids)
+        #     elif self.request.user.rol == 'admin':
+        #         # El admin ve todo, no necesita filtro adicional aquí
+        #         pass
+        # else:
+        #     # Si no está autenticado, no ve nada
+        #     queryset = Actividad.objects.none()
+            
+        return queryset
+
+    # Opcional: Sobrescribir perform_create para asegurar que solo docentes/admins creen
+    def perform_create(self, serializer):
+        # Lógica de permisos para el futuro:
+        # if not self.request.user.is_authenticated or self.request.user.rol not in ['docente', 'admin']:
+        #     raise PermissionDenied("Solo docentes y administradores pueden crear actividades.")
+        
+        # Asegurarse de que el usuario que crea la actividad tenga relación con la materia
+        # (si es docente, que sea su materia; si es admin, puede crear en cualquiera)
+        # Esto es más complejo y se haría con validadores o permisos personalizados.
+        serializer.save()
+
+
 
 # ViewSet para el modelo SesionActividad
 class SesionActividadViewSet(viewsets.ModelViewSet):
