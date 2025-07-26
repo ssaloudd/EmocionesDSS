@@ -1,4 +1,3 @@
-# api/ml_model/detector.py
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -6,10 +5,10 @@ from tensorflow.keras.models import load_model
 import os
 
 # Emociones en el mismo orden que en el entrenamiento
-EMOTIONS = ['Disgusto', 'Enojo', 'Felicidad', 'Miedo', 'Neutral', 'Sorpresa', 'Tristeza']
+EMOTIONS = ['disgusto', 'enojo', 'felicidad', 'miedo', 'neutral', 'sorpresa', 'tristeza']
 
 BASE_DIR_ML = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR_ML, '3-5_personalizado_best_v2.keras')
+MODEL_PATH = os.path.join(BASE_DIR_ML, 'modelo_anterior3-5v2.keras')
 
 # Cargar modelo entrenado CNN
 try:
@@ -19,7 +18,7 @@ except Exception as e:
     print(f"Error al cargar el modelo .keras: {e}")
     cnn_model = None
 
-IMG_SIZE = (100, 100)  # Ajusta al tamaño usado en el entrenamiento
+IMG_SIZE = (96, 96)  # Ajusta al tamaño usado en el entrenamiento
 
 # Inicializar MediaPipe
 mp_face_detection = mp.solutions.face_detection

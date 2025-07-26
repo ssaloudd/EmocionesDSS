@@ -2,6 +2,7 @@ from django.db import models
 
 # Create your models here.
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone # ¡Asegúrate de importar timezone!
 
 # Roles de usuario
 class Usuario(AbstractUser):
@@ -63,10 +64,17 @@ class Actividad(models.Model):
 
 # Sesión en la que un alumno realiza una actividad
 class SesionActividad(models.Model):
-    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE)
+    actividad = models.ForeignKey(Actividad, on_delete=models.CASCADE, related_name='sesiones')
     alumno = models.ForeignKey(Usuario, on_delete=models.CASCADE, limit_choices_to={'rol': 'alumno'})
-    fecha_hora_inicio_real = models.DateTimeField()
-    #duracion_grabacion_segundos = models.PositiveIntegerField()   SI SE QUIERE GUARDAR GRABACIÓN
+    fecha_hora_inicio_real = models.DateTimeField(auto_now_add=True) # <-- Cambiado a auto_now_add=True
+    fecha_hora_fin_real = models.DateTimeField(null=True, blank=True) # <-- ¡AÑADE ESTA LÍNEA!
+
+    class Meta:
+        # Esto asegura que no haya dos sesiones exactamente iguales (misma actividad, alumno, inicio)
+        unique_together = ('actividad', 'alumno', 'fecha_hora_inicio_real')
+
+    def __str__(self):
+        return f"Sesión {self.id} - {self.actividad.nombre} por {self.alumno.username}"
 
 # Análisis emocional asociado a una sesión
 class AnalisisEmocion(models.Model):

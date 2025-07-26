@@ -35,12 +35,14 @@ const columns = [
 ];
 
 interface ActivitiesPageProps {
-  params: { id: string }; // Next.js pasa los parámetros dinámicos en 'params'
+  // CAMBIO CLAVE AQUÍ: Ahora espera 'materiaId' en lugar de 'id'
+  params: { materiaId: string }; 
 }
 
 const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
   const params = useParams();
-  const materiaId = params.id ? parseInt(params.id as string) : null;
+  // CAMBIO CLAVE AQUÍ: Accede a 'params.materiaId'
+  const materiaId = params.materiaId ? parseInt(params.materiaId as string) : null; 
 
   const [allActivities, setAllActivities] = useState<Actividad[]>([]);
   const [loading, setLoading] = useState(true);
@@ -136,6 +138,7 @@ const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
               <FontAwesomeIcon icon={faPlayCircle} size="sm" />
             </button>
           </Link>
+
           {(role === "admin" || role === "docente") && (
             <>
               <FormModal<Actividad, CreateUpdateActividadPayload>
@@ -191,7 +194,7 @@ const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
   return (
     <div className="bg-white p-4 rounded-md flex-1 m-4 mt-0">
       <div className="flex items-center justify-between">
-        <h1 className="hidden md:block text-lg font-semibold">Actividades de Materia {materiaId}</h1> {/* Puedes mostrar el nombre de la materia aquí */}
+        <h1 className="hidden md:block text-lg font-semibold">Actividades de Materia {materiaId}</h1>
         <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
           <TableSearch />
           <div className="flex items-center gap-4 self-end">
@@ -212,6 +215,7 @@ const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
           </div>
         </div>
       </div>
+      {/* LIST */}
       <Table
         columns={columns}
         renderRow={renderRow}

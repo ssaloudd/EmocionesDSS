@@ -159,25 +159,64 @@ class ActividadReadSerializer(serializers.ModelSerializer):
 
 
 
-class SesionActividadSerializer(serializers.ModelSerializer):
-    actividad = ActividadReadSerializer(read_only=True) # Anida los detalles de la actividad
-    alumno = UsuarioSerializer(read_only=True)     # Anida los detalles del alumno
+# --- Serializadores de SesionActividad ---
+
+# Serializador para escritura de SesionActividad (POST, PUT, PATCH): Espera IDs para las relaciones ForeignKey
+class SesionActividadWriteSerializer(serializers.ModelSerializer):
+    actividad = serializers.PrimaryKeyRelatedField(queryset=Actividad.objects.all())
+    alumno = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.filter(rol='alumno'))
+
+    class Meta:
+        model = SesionActividad
+        fields = '__all__'
+        read_only_fields = ['fecha_hora_inicio_real', 'fecha_hora_fin_real'] # Estos campos se gestionan en el backend
+
+# Serializador para lectura de SesionActividad (GET): Anida objetos completos de Actividad y Alumno
+class SesionActividadReadSerializer(serializers.ModelSerializer):
+    actividad = ActividadReadSerializer() # Anida el serializador de Actividad para lectura
+    alumno = UsuarioSerializer() # Anida el serializador de Usuario para lectura
 
     class Meta:
         model = SesionActividad
         fields = '__all__'
 
-class AnalisisEmocionSerializer(serializers.ModelSerializer):
-    sesion = SesionActividadSerializer(read_only=True) # Anida los detalles de la sesión de actividad
+
+
+# --- Serializadores de AnalisisEmocion ---
+
+# Serializador para escritura de AnalisisEmocion (POST, PUT, PATCH): Espera ID de la SesionActividad para la relación ForeignKey
+class AnalisisEmocionWriteSerializer(serializers.ModelSerializer):
+    sesion = serializers.PrimaryKeyRelatedField(queryset=SesionActividad.objects.all())
 
     class Meta:
         model = AnalisisEmocion
         fields = '__all__'
 
+# Serializador para lectura de AnalisisEmocion (GET): Anida objeto SesionActividad completo usando SesionActividadReadSerializer
+class AnalisisEmocionReadSerializer(serializers.ModelSerializer):
+    sesion = SesionActividadReadSerializer() # Anida el serializador de SesionActividad para lectura
+
+    class Meta:
+        model = AnalisisEmocion
+        fields = '__all__'
+
+
+
+# --- Serializadores de Calificacion ---
+
 class CalificacionSerializer(serializers.ModelSerializer):
-    sesion = SesionActividadSerializer(read_only=True) # Anida los detalles de la sesión
-    docente = UsuarioSerializer(read_only=True)     # Anida los detalles del docente
+    # Asegúrate de que los campos relacionados usen los serializadores de lectura
+    sesion = SesionActividadReadSerializer(read_only=True) # Usa SesionActividadReadSerializer
+    docente = UsuarioSerializer(read_only=True)
 
     class Meta:
         model = Calificacion
         fields = '__all__'
+
+
+
+# Nuevo Serializador para los datos del frame de emoción
+class EmotionFrameSerializer(serializers.Serializer):
+    sesion_id = serializers.IntegerField()
+    frame_base64 = serializers.CharField()
+    momento_segundo = serializers.IntegerField()
