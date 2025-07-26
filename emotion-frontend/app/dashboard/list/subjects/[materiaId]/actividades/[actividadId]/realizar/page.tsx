@@ -48,6 +48,9 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
   const [sessionStarted, setSessionStarted] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
 
+  const [remainingTime, setRemainingTime] = useState<number | null>(null);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
+
   const getCurrentUserId = useCallback(async (): Promise<number | null> => {
     try {
       const users = await getUsers({ rol: MOCKED_ALUMNO_ROL });
@@ -73,36 +76,49 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
     if (isEndingRef.current || sessionEnded) return;
     isEndingRef.current = true;
 
+    console.log("DEBUG: Ejecutando endCurrentSession...");
+
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
+      console.log("DEBUG: Intervalo de emociones detenido.");
+    }
+
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+      console.log("DEBUG: Contador detenido.");
     }
 
     if (cameraStream) {
       cameraStream.getTracks().forEach((track) => track.stop());
       setCameraStream(null);
+      console.log("DEBUG: Cámara detenida.");
     }
 
     if (sesionActividad) {
       try {
-        console.log(`DEBUG: Intentando finalizar sesión ${sesionActividad.id}`);
         await endSesionActividad(sesionActividad.id);
-        setSessionEnded(true);
-        
-        alert("Sesión de actividad finalizada.");
+        console.log(
+          `DEBUG: Sesión ${sesionActividad.id} finalizada correctamente.`
+        );
       } catch (err: any) {
         console.error("Error al finalizar sesión:", err);
         setError(`Error al finalizar sesión: ${err.message}`);
       }
     }
+    setSessionEnded(true);
   }, [sesionActividad, sessionEnded, cameraStream]);
 
   // Limpiar intervalo y finalizar sesión al desmontar el componente
-  useEffect(() => {
+  /*useEffect(() => {
     return () => {
-      endCurrentSession();
+      // Solo finalizar si verdaderamente se había iniciado sesión
+      if (sessionStarted) {
+        endCurrentSession();
+      }
     };
-  }, [endCurrentSession]);
+  }, [sessionStarted, endCurrentSession]);*/
 
   // useEffect 1: Cargar detalles de la actividad
   useEffect(() => {
@@ -135,15 +151,24 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
 
   // useEffect 2: Acceder a la cámara cuando el videoRef esté disponible
   useEffect(() => {
+    // Si ya finalizó la sesión, no permitas re-iniciar la cámara
+    if (sessionEnded) {
+      // Por si acaso queda algún stream abierto
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((t) => t.stop());
+        setCameraStream(null);
+        console.log("DEBUG: Cámara detenida tras sesión finalizada.");
+      }
+      return;
+    }
+
     let active = true; // bandera para evitar operaciones si el componente ya se desmontó
 
     const startCamera = async () => {
       if (!videoRef.current || cameraStream) return;
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
 
         if (!active || !videoRef.current) {
           // Si el componente ya se desmontó, no hagas nada con el stream
@@ -166,9 +191,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
       } catch (err: any) {
         console.error("Error al acceder a la cámara:", err);
         if (active) {
-          setError(
-            "No se pudo acceder a la cámara. Asegúrate de dar permisos."
-          );
+          setError("No se pudo acceder a la cámara. Asegúrate de dar permisos.");
           setCameraStream(null);
         }
       }
@@ -185,7 +208,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
         console.log("DEBUG: Cámara detenida en cleanup.");
       }
     };
-  }, [videoRef.current, cameraStream]); // Depende de videoRef.current y cameraStream
+  }, [videoRef.current, cameraStream, sessionEnded]); // Depende de videoRef.current y cameraStream
 
   // useEffect 3: Iniciar SesionActividad y Análisis de Emoción una vez que todo esté listo
   useEffect(() => {
@@ -214,6 +237,47 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
         startTimeRef.current = Date.now();
 
         console.log("DEBUG: Sesión de actividad creada:", newSesion.id);
+
+        const mins = actividad.duracion_analisis_minutos;
+        if (mins > 0) {
+          // calcula segundos
+          const durationInSeconds = mins * 60;
+          console.log(
+            "DEBUG: iniciando contador con",
+            durationInSeconds,
+            "segundos"
+          );
+          setRemainingTime(durationInSeconds);
+
+          // limpia posible countdown previo
+          if (countdownRef.current) {
+            clearInterval(countdownRef.current);
+            countdownRef.current = null;
+            console.log("DEBUG: se limpió un countdown previo");
+          }
+
+          countdownRef.current = setInterval(() => {
+            setRemainingTime((prev) => {
+              if (prev === null) return null;
+
+              if (prev <= 1) {
+                // fin de contador
+                clearInterval(countdownRef.current!);
+                countdownRef.current = null;
+                console.log(
+                  "DEBUG: contador llegó a 0, forzando endCurrentSession"
+                );
+                endCurrentSession();
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+        } else {
+          console.log(
+            "DEBUG: duración de análisis no positiva, no se inicia contador automático"
+          );
+        }
 
         const captureInterval = setInterval(async () => {
           const video = videoRef.current;
@@ -263,12 +327,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
         }, 1500); // Frecuencia de envío de frames
 
         intervalRef.current = captureInterval;
-
-        if (actividad.duracion_analisis_minutos > 0) {
-          setTimeout(() => {
-            endCurrentSession();
-          }, actividad.duracion_analisis_minutos * 60 * 1000);
-        }
+        
       } catch (err: any) {
         console.error("Error al iniciar sesión o detección:", err);
         setError(`Error al iniciar sesión o detección: ${err.message}`);
@@ -335,7 +394,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
 
       {!cameraStream && ( // Muestra el mensaje si no hay stream de cámara
         <p className="text-red-500 mb-4">
-          Por favor, permite el acceso a la cámara para iniciar la actividad.
+          No es posible el acceso a la cámara.
         </p>
       )}
 
@@ -368,13 +427,16 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
         )}
       </div>
 
-      {sessionStarted && !sessionEnded && (
-        <button
-          onClick={endCurrentSession}
-          className="mt-4 bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600 transition-colors"
-        >
-          Finalizar Sesión Manualmente
-        </button>
+      {sessionStarted && !sessionEnded && remainingTime !== null && (
+        <div className="mt-4 text-lg text-center">
+          Tiempo restante:{" "}
+          <span className="font-bold text-blue-700">
+            {Math.floor(remainingTime / 60)
+              .toString()
+              .padStart(2, "0")}
+            :{(remainingTime % 60).toString().padStart(2, "0")}
+          </span>
+        </div>
       )}
     </div>
   );

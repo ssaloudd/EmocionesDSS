@@ -18,7 +18,7 @@ const ActivityForm: React.FC<ActivityFormProps> = ({ type, data, materiaId, onSu
   // Formatear fecha_inicio para el input datetime-local
   const defaultFechaInicio = data?.fecha_inicio ? new Date(data.fecha_inicio).toISOString().slice(0, 16) : '';
   const [fechaInicio, setFechaInicio] = useState(defaultFechaInicio);
-  const [duracionAnalisisMinutos, setDuracionAnalisisMinutos] = useState(data?.duracion_analisis_minutos || 30);
+  const [duracionAnalisisMinutos, setDuracionAnalisisMinutos] = useState(data?.duracion_analisis_minutos || 10);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
