@@ -1,13 +1,16 @@
 from django.shortcuts import render
-
-# Create your views here.
+from django.conf import settings
+from django.db import IntegrityError # Importa IntegrityError para manejar duplicados
+from django.utils import timezone # ¡IMPORTA ESTO para manejar zonas horarias!
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, AllowAny # Importa permisos
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from tensorflow.keras.models import load_model
 
 from .models import (
     Usuario,
@@ -26,20 +29,29 @@ from .serializers import (
     NivelSerializer,
     MateriaWriteSerializer,
     MateriaReadSerializer,
-    CursoAlumnoSerializer,
-    CursoDocenteSerializer,
-    ActividadSerializer,
-    SesionActividadSerializer,
-    AnalisisEmocionSerializer,
-    CalificacionSerializer
+    CursoAlumnoReadSerializer,
+    CursoAlumnoWriteSerializer,
+    BulkEnrollmentSerializer,
+    CursoDocenteReadSerializer,
+    CursoDocenteWriteSerializer,
+    BulkAssignmentSerializer,
+    ActividadWriteSerializer,
+    ActividadReadSerializer,
+    SesionActividadWriteSerializer,
+    SesionActividadReadSerializer,
+    AnalisisEmocionWriteSerializer,
+    AnalisisEmocionReadSerializer,
+    CalificacionSerializer,
+    EmotionFrameSerializer
 )
 
+import os
 import base64
 import cv2
 import numpy as np
 from datetime import datetime
+from .serializers import EmotionFrameSerializer
 from .ml_model.detector import detectar_emocion
-
 
 # --- Vistas para el Dashboard de Administración (Resúmenes) ---
 
@@ -124,64 +136,244 @@ class MateriaViewSet(viewsets.ModelViewSet):
         # Para POST, PUT, PATCH (crear, actualizar), usa MateriaWriteSerializer
         return MateriaWriteSerializer
 
+
+
 # ViewSet para la relación CursoAlumno
 class CursoAlumnoViewSet(viewsets.ModelViewSet):
     queryset = CursoAlumno.objects.all()
-    serializer_class = CursoAlumnoSerializer
-    # permission_classes = [IsAuthenticated]
+    # No definimos serializer_class directamente aquí
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
-    # Filtrar para que un alumno solo vea sus propios cursos
-    def get_queryset(self):
-        if self.request.user.is_authenticated and self.request.user.rol == 'alumno':
-            return CursoAlumno.objects.filter(alumno=self.request.user)
-        return super().get_queryset()
+    def get_serializer_class(self):
+        if self.action in ['list', 'retrieve']:
+            return CursoAlumnoReadSerializer
+        # Para las acciones de creación/actualización normales, usa el serializador de escritura
+        if self.action in ['create', 'update', 'partial_update']:
+            return CursoAlumnoWriteSerializer
+        # Para la acción 'bulk_enroll', usa su serializador específico
+        if self.action == 'bulk_enroll':
+            return BulkEnrollmentSerializer
+        return CursoAlumnoReadSerializer # Fallback
+
+    # Acción personalizada para inscripción masiva de alumnos
+    # URL: /api/curso-alumnos/bulk_enroll/
+    @action(detail=False, methods=['post'])
+    def bulk_enroll(self, request):
+        serializer = BulkEnrollmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        materia_id = serializer.validated_data['materia_id']
+        alumno_ids = serializer.validated_data['alumno_ids']
+
+        # Obtener la materia y los alumnos
+        materia = Materia.objects.get(id=materia_id)
+        alumnos = Usuario.objects.filter(id__in=alumno_ids, rol='alumno')
+
+        created_enrollments = []
+        errors = []
+
+        for alumno in alumnos:
+            try:
+                # Crear o obtener la inscripción si ya existe
+                curso_alumno, created = CursoAlumno.objects.get_or_create(
+                    alumno=alumno,
+                    materia=materia,
+                    defaults={'fecha_inscripcion': datetime.now().date()} # Default si se crea
+                )
+                if created:
+                    created_enrollments.append(curso_alumno)
+                else:
+                    errors.append(f"El alumno {alumno.first_name} {alumno.last_name} ya está inscrito en esta materia.")
+            except IntegrityError:
+                errors.append(f"Error de integridad al inscribir al alumno {alumno.first_name} {alumno.last_name}.")
+            except Exception as e:
+                errors.append(f"Error inesperado al inscribir al alumno {alumno.first_name} {alumno.last_name}: {str(e)}.")
+
+        if created_enrollments:
+            # Serializar las inscripciones creadas/actualizadas para la respuesta
+            response_serializer = CursoAlumnoReadSerializer(created_enrollments, many=True)
+            return Response({
+                "message": "Operación de inscripción masiva completada.",
+                "created_count": len(created_enrollments),
+                "errors": errors,
+                "enrollments": response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                "message": "No se crearon nuevas inscripciones.",
+                "errors": errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
 
 # ViewSet para la relación CursoDocente
 class CursoDocenteViewSet(viewsets.ModelViewSet):
     queryset = CursoDocente.objects.all()
-    serializer_class = CursoDocenteSerializer
-    # permission_classes = [IsAuthenticated]
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
-    # Filtrar para que un docente solo vea sus propios cursos
-    def get_queryset(self):
-        if self.request.user.is_authenticated and self.request.user.rol == 'docente':
-            return CursoDocente.objects.filter(docente=self.request.user)
+    def get_serializer_class(self):
+        if self.action in ['list', 'retrieve']:
+            return CursoDocenteReadSerializer
+        if self.action in ['create', 'update', 'partial_update']:
+            return CursoDocenteWriteSerializer
+        if self.action == 'bulk_assign':
+            return BulkAssignmentSerializer
+        return CursoDocenteReadSerializer # Fallback
+
+    # Acción personalizada para asignación masiva de docentes
+    # URL: /api/curso-docentes/bulk_assign/
+    @action(detail=False, methods=['post'])
+    def bulk_assign(self, request):
+        serializer = BulkAssignmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        materia_id = serializer.validated_data['materia_id']
+        docente_ids = serializer.validated_data['docente_ids']
+
+        materia = Materia.objects.get(id=materia_id)
+        docentes = Usuario.objects.filter(id__in=docente_ids, rol='docente')
+
+        created_assignments = []
+        errors = []
+
+        for docente in docentes:
+            try:
+                curso_docente, created = CursoDocente.objects.get_or_create(
+                    docente=docente,
+                    materia=materia
+                )
+                if created:
+                    created_assignments.append(curso_docente)
+                else:
+                    errors.append(f"El docente {docente.first_name} {docente.last_name} ya está asignado a esta materia.")
+            except IntegrityError:
+                errors.append(f"Error de integridad al asignar al docente {docente.first_name} {docente.last_name}.")
+            except Exception as e:
+                errors.append(f"Error inesperado al asignar al docente {docente.first_name} {docente.last_name}: {str(e)}.")
+
+        if created_assignments:
+            response_serializer = CursoDocenteReadSerializer(created_assignments, many=True)
+            return Response({
+                "message": "Operación de asignación masiva completada.",
+                "created_count": len(created_assignments),
+                "errors": errors,
+                "assignments": response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                "message": "No se crearon nuevas asignaciones.",
+                "errors": errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 # ViewSet para el modelo Actividad
 class ActividadViewSet(viewsets.ModelViewSet):
     queryset = Actividad.objects.all()
-    serializer_class = ActividadSerializer
-    # permission_classes = [IsAuthenticated]
+        
+    # --- PERMISOS TEMPORALES PARA DESARROLLO ---
+    authentication_classes = [] 
+    permission_classes = [AllowAny] 
+    # --- FIN PERMISOS TEMPORALES ---
+
+    def get_serializer_class(self):
+        # Si la solicitud es GET (para listar o recuperar), usa ActividadReadSerializer
+        if self.action in ['list', 'retrieve']:
+            return ActividadReadSerializer
+        # Para POST, PUT, PATCH (crear, actualizar), usa ActividadWriteSerializer
+        return ActividadWriteSerializer
+
+    def get_queryset(self):
+        queryset = Actividad.objects.all()
+        
+        # Obtener el parámetro 'materia' de la URL de la solicitud (ej. /api/actividades/?materia=1)
+        materia_id = self.request.query_params.get('materia', None)
+        if materia_id is not None:
+            # Filtrar el queryset si se proporciona un ID de materia
+            queryset = queryset.filter(materia_id=materia_id)
+            
+        # Lógica de permisos para el futuro:
+        # if self.request.user.is_authenticated:
+        #     if self.request.user.rol == 'docente':
+        #         # Un docente solo ve actividades de sus materias
+        #         materias_docente_ids = CursoDocente.objects.filter(docente=self.request.user).values_list('materia__id', flat=True)
+        #         queryset = queryset.filter(materia__id__in=materias_docente_ids)
+        #     elif self.request.user.rol == 'alumno':
+        #         # Un alumno solo ve actividades de las materias en las que está inscrito
+        #         materias_alumno_ids = CursoAlumno.objects.filter(alumno=self.request.user).values_list('materia__id', flat=True)
+        #         queryset = queryset.filter(materia__id__in=materias_alumno_ids)
+        #     elif self.request.user.rol == 'admin':
+        #         # El admin ve todo, no necesita filtro adicional aquí
+        #         pass
+        # else:
+        #     # Si no está autenticado, no ve nada
+        #     queryset = Actividad.objects.none()
+            
+        return queryset
+
+    # Opcional: Sobrescribir perform_create para asegurar que solo docentes/admins creen
+    def perform_create(self, serializer):
+        # Lógica de permisos para el futuro:
+        # if not self.request.user.is_authenticated or self.request.user.rol not in ['docente', 'admin']:
+        #     raise PermissionDenied("Solo docentes y administradores pueden crear actividades.")
+        
+        # Asegurarse de que el usuario que crea la actividad tenga relación con la materia
+        # (si es docente, que sea su materia; si es admin, puede crear en cualquiera)
+        # Esto es más complejo y se haría con validadores o permisos personalizados.
+        serializer.save()
+
+
 
 # ViewSet para el modelo SesionActividad
 class SesionActividadViewSet(viewsets.ModelViewSet):
     queryset = SesionActividad.objects.all()
-    serializer_class = SesionActividadSerializer
-    # permission_classes = [IsAuthenticated]
+    authentication_classes = []
+    permission_classes = [AllowAny] # Temporalmente abierto
 
-    # Asegurarse de que un alumno solo pueda crear sesiones para sí mismo
+    def get_serializer_class(self):
+        if self.action in ['list', 'retrieve']:
+            return SesionActividadReadSerializer # Para lectura
+        return SesionActividadWriteSerializer # Para escritura (create, update, partial_update)
+
     def perform_create(self, serializer):
-        if self.request.user.is_authenticated and self.request.user.rol == 'alumno':
-            # Asegura que el alumno de la sesión sea el usuario autenticado
-            serializer.save(alumno=self.request.user)
-        else:
-            # Si no es alumno o no está autenticado, maneja el error o permite a admins
-            # Aquí, por simplicidad, se permite si no es alumno autenticado (e.g., admin)
-            serializer.save()
+        # Al crear una SesionActividad, establece la fecha_hora_inicio_real con timezone.now()
+        serializer.save(fecha_hora_inicio_real=timezone.now())
+
+    # Acción personalizada para finalizar una sesión de actividad
+    @action(detail=True, methods=['post'])
+    def end_session(self, request, pk=None):
+        try:
+            sesion = self.get_object() 
+            if sesion.fecha_hora_fin_real:
+                return Response({"message": "La sesión ya ha sido finalizada."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            sesion.fecha_hora_fin_real = timezone.now() # Usar timezone.now()
+            sesion.save()
+            
+            serializer = SesionActividadReadSerializer(sesion) # Usar el serializador de lectura para la respuesta
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except SesionActividad.DoesNotExist:
+            return Response({"error": "Sesión de actividad no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 
 # ViewSet para el modelo AnalisisEmocion
-# Para la recepción en tiempo real de frames, se podría considerar una APIView personalizada.
 class AnalisisEmocionViewSet(viewsets.ModelViewSet):
     queryset = AnalisisEmocion.objects.all()
-    serializer_class = AnalisisEmocionSerializer
-    # permission_classes = [IsAuthenticated]
+    authentication_classes = []
+    permission_classes = [AllowAny] # Temporalmente abierto
 
-    # Filtrar para que un alumno solo vea sus propios análisis
-    def get_queryset(self):
-        if self.request.user.is_authenticated and self.request.user.rol == 'alumno':
-            # Filtra por las sesiones del alumno actual
-            return AnalisisEmocion.objects.filter(sesion__alumno=self.request.user)
-        return super().get_queryset()
+    def get_serializer_class(self):
+        if self.action in ['list', 'retrieve']:
+            return AnalisisEmocionReadSerializer # Para lectura
+        return AnalisisEmocionWriteSerializer # Para escritura
+
+    def perform_create(self, serializer):
+        serializer.save()
+
 
 
 # ViewSet para el modelo Calificacion
@@ -197,86 +389,84 @@ class CalificacionViewSet(viewsets.ModelViewSet):
         return super().get_queryset()
 
 
-# --- Vista para la Recepción de Datos de Emoción en Tiempo Real ---
-# Esta es una APIView personalizada para manejar la lógica de ML.
-# Se espera que reciba un frame de imagen (base64 o binario) y el ID de la sesión.
+
+# Vista para la Recepción de Datos de Emoción en Tiempo Real
 class EmocionDetectionAPIView(APIView):
-    parser_classes = [JSONParser]
-    # permission_classes = [IsAuthenticated] 
+    parser_classes = [JSONParser] 
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
-        # Asegura que la sesión exista y el usuario tenga permiso para esa sesión
-        sesion_id = request.data.get('sesion_id')
-        frame_base64 = request.data.get('frame_base64') # Esperamos el frame en base64
-        momento_segundo_frontend = request.data.get('momento_segundo') # Opcional: si el frontend calcula esto
+        # Usa el serializador para validar los datos de entrada
+        serializer = EmotionFrameSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True) # Lanza excepción si la validación falla
 
-        if not sesion_id or not frame_base64:
-            return Response({"error": "sesion_id y frame_base64 son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+        sesion_id = serializer.validated_data['sesion_id']
+        frame_base64 = serializer.validated_data['frame_base64']
+        momento_segundo = serializer.validated_data['momento_segundo']
 
         try:
             sesion = SesionActividad.objects.get(id=sesion_id)
+            
+            # --- Decodificación de la imagen para OpenCV ---
+            # Eliminar el prefijo 'data:image/jpeg;base64,' si existe
+            if ',' in frame_base64:
+                _, frame_base64 = frame_base64.split(',', 1)
+            
+            image_bytes = base64.b64decode(frame_base64)
+            np_array = np.frombuffer(image_bytes, np.uint8)
+            # cv2.IMREAD_COLOR para asegurar 3 canales (BGR) para MediaPipe
+            imagen_cv2 = cv2.imdecode(np_array, cv2.IMREAD_COLOR) 
 
-            # Opcional: Verificar que el usuario autenticado sea el alumno de esta sesión
-            # if request.user.is_authenticated and sesion.alumno != request.user:
-            #     return Response({"error": "No tienes permiso para esta sesión."}, status=status.HTTP_403_FORBIDDEN)
+            if imagen_cv2 is None:
+                return Response({"error": "No se pudo decodificar la imagen Base64 o es inválida."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # 1. Decodificar la imagen Base64
-            try:
-                # El cliente podría enviar 'data:image/jpeg;base64,...' o solo la parte base64
-                if ',' in frame_base64:
-                    _, frame_base64 = frame_base64.split(',', 1)
-                image_bytes = base64.b64decode(frame_base64)
-                np_array = np.frombuffer(image_bytes, np.uint8)
-                imagen_cv2 = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
-
-                if imagen_cv2 is None:
-                    return Response({"error": "No se pudo decodificar la imagen Base64."}, status=status.HTTP_400_BAD_REQUEST)
-
-            except Exception as e:
-                return Response({"error": f"Error al decodificar la imagen: {e}"}, status=status.HTTP_400_BAD_REQUEST)
-
-            # 2. Llamar a la función de detección de emoción
+            # --- Llamada a tu función detectar_emocion ---
+            # Tu función detectar_emocion espera una imagen de OpenCV (numpy.ndarray)
             emotion_results = detectar_emocion(imagen_cv2)
 
-            if emotion_results is None:
-                # No se detectó ningún rostro o hubo un error interno en el detector
-                return Response({"message": "No se detectó ningún rostro o el modelo no está cargado.", "sesion_id": sesion_id}, status=status.HTTP_200_OK)
-                # Puedes elegir devolver un 400 si la ausencia de rostro es un error para tu caso
-
-            # 3. Calcular el momento_segundo
-            # Si el frontend envía 'momento_segundo_frontend', úsalo directamente
-            if momento_segundo_frontend is not None:
-                momento_segundo = int(momento_segundo_frontend)
-            else:
-                # Si no, calcula el tiempo transcurrido desde el inicio real de la sesión
-                tiempo_transcurrido = (datetime.now() - sesion.fecha_hora_inicio_real).total_seconds()
-                momento_segundo = int(tiempo_transcurrido)
-
-            # 4. Preparar los datos para el serializador
+            # Preparar datos para AnalisisEmocion
             analisis_data = {
-                'sesion': sesion.id, # Solo el ID de la sesión
+                'sesion': sesion.id,
                 'momento_segundo': momento_segundo,
-                'emocion_predominante': emotion_results['emocion_predominante'],
-                'confianza_emocion': emotion_results['confianza_emocion'],
-                'datos_raw_emociones': emotion_results['datos_raw_emociones']
+                'emocion_predominante': None, # Valores por defecto si no hay detección
+                'confianza_emocion': 0.0,
+                'datos_raw_emociones': {}
             }
-            
-            # 5. Guardar el resultado en la base de datos
-            serializer = AnalisisEmocionSerializer(data=analisis_data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+            if emotion_results: # Si detectar_emocion devolvió un diccionario (hubo detección)
+                analisis_data['emocion_predominante'] = emotion_results.get('emocion_predominante')
+                analisis_data['confianza_emocion'] = emotion_results.get('confianza_emocion')
+                analisis_data['datos_raw_emociones'] = emotion_results.get('datos_raw_emociones', {})
             else:
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                print(f"DEBUG: No se detectó rostro o hubo un problema en detectar_emocion para sesion_id={sesion_id}, momento_segundo={momento_segundo}")
+                # Puedes ajustar el mensaje o el valor de emocion_predominante si quieres algo más explícito
+                # analisis_data['emocion_predominante'] = 'no_detectado' 
+            
+            # Usar AnalisisEmocionWriteSerializer para guardar
+            analisis_serializer = AnalisisEmocionWriteSerializer(data=analisis_data)
+            if analisis_serializer.is_valid():
+                analisis_serializer.save()
+                
+                # Devolver la respuesta al frontend
+                response_data = {
+                    "emocion": analisis_data['emocion_predominante'],
+                    "confianza": analisis_data['confianza_emocion'],
+                    "message": "Análisis de emoción registrado."
+                }
+                if not emotion_results:
+                    response_data["message"] = "Frame recibido, pero no se detectó rostro o hubo un problema."
+
+                return Response(response_data, status=status.HTTP_201_CREATED) # 201 Created si se guarda un análisis
+            else:
+                print(f"ERROR: Errores de validación al guardar AnalisisEmocion: {analisis_serializer.errors}")
+                return Response(analisis_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         except SesionActividad.DoesNotExist:
             return Response({"error": "Sesión de actividad no encontrada."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            # Captura cualquier otra excepción inesperada
-            return Response({"error": f"Error interno del servidor: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
+            print(f"ERROR: Error interno del servidor en EmocionDetectionAPIView: {str(e)}")
+            return Response({"error": f"Error interno del servidor: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 

@@ -4,16 +4,29 @@ import { role } from "../lib/data";
 // export const role = "admin"; // or dynamically set based on your app logic
 import Image from "next/image";
 import Link from "next/link";
+import { title } from "process";
 
 const menuItems = [
   {
-    title: "MENU",
+    title: "MENU GENERAL",
     items: [
       {
         icon: "/home.png",
         label: "Home",
         href: "/dashboard/admin",
         visible: ["admin"],
+      },
+      {
+        icon: "/nivel.png",
+        label: "Niveles",
+        href: "/dashboard/list/niveles/",
+        visible: ["admin", "teacher"],
+      },
+      {
+        icon: "/materias.png",
+        label: "Materias",
+        href: "/dashboard/list/subjects/",
+        visible: ["admin", "teacher", "student"],
       },
       {
         icon: "/teacher.png",
@@ -27,24 +40,7 @@ const menuItems = [
         href: "/dashboard/list/students",
         visible: ["admin", "teacher"],
       },
-      /*{
-        icon: "/nivel.png",
-        label: "Niveles",
-        href: "/dashboard/list/niveles/",
-        visible: ["admin", "teacher"],
-      },*/
-      {
-        icon: "/materias.png",
-        label: "Materias",
-        href: "/dashboard/list/subjects/",
-        visible: ["admin", "teacher", "student"],
-      },
-      /*{
-        icon: "/class.png",
-        label: "Clases",
-        href: "/list/classes",
-        visible: ["admin", "teacher"],
-      },*/
+
       /*{
         icon: "/lesson.png",
         label: "Lecciones",
@@ -96,7 +92,24 @@ const menuItems = [
     ],
   },
   {
-    title: "OTHER",
+    title: "CURSOS",
+    items: [
+      {
+        icon: "/claseDoc.png",
+        label: "Cursos de Docentes",
+        href: "/dashboard/list/course-assignments",
+        visible: ["admin", "teacher"],
+      },
+      {
+        icon: "/claseAlu.png",
+        label: "Cursos de Alumnos",
+        href: "/dashboard/list/course-enrollments",
+        visible: ["admin", "teacher"],
+      },
+    ],
+  },
+  {
+    title: "OTROS",
     items: [
       /*{
         icon: "/profile.png",
