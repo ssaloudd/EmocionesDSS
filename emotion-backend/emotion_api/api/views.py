@@ -2,6 +2,7 @@ from django.shortcuts import render
 from django.conf import settings
 from django.db import IntegrityError # Importa IntegrityError para manejar duplicados
 from django.utils import timezone # ¡IMPORTA ESTO para manejar zonas horarias!
+from django.db.models import Q # Importa Q para consultas complejas
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -11,6 +12,8 @@ from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, AllowAny # Importa permisos
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from tensorflow.keras.models import load_model
+
+from .permissions import IsAdmin, IsDocente, IsAlumno, IsAdminOrReadSelf 
 
 from .models import (
     Usuario,
@@ -58,7 +61,7 @@ from .ml_model.detector import detectar_emocion
 # Vista para el resumen general del administrador
 # Se usa @permission_classes para restringir el acceso
 @api_view(['GET'])
-#@permission_classes([IsAuthenticated]) # Solo usuarios autenticados pueden acceder
+@permission_classes([IsAdmin]) 
 def resumen_admin(request):
     # Se puede añadir lógica para verificar si el usuario tiene rol 'admin'
     # if not request.user.is_authenticated or request.user.rol != 'admin':
@@ -85,7 +88,7 @@ class UsuarioViewSet(viewsets.ModelViewSet):
     queryset = Usuario.objects.all()
     serializer_class = UsuarioSerializer
     # Permisos: Solo administradores pueden listar/crear/actualizar/eliminar usuarios
-    # permission_classes = [IsAdminUser] # Requiere que el usuario sea staff o superuser
+    permission_classes = [IsAuthenticated, IsAdminOrReadSelf] 
 
     def get_queryset(self):
         queryset = Usuario.objects.all()
@@ -95,6 +98,11 @@ class UsuarioViewSet(viewsets.ModelViewSet):
         if rol is not None:
             # Filtrar el queryset si se proporciona un rol
             queryset = queryset.filter(rol=rol)
+
+        # Si no es admin, solo puede ver su propio perfil (ya manejado por IsAdminOrReadSelf.has_object_permission)
+        # pero para la lista, si no es admin, no debería ver a otros.
+        if not self.request.user.rol == 'admin' and self.action == 'list':
+            queryset = queryset.filter(id=self.request.user.id)
         return queryset
     
     def perform_create(self, serializer):
@@ -115,35 +123,72 @@ class UsuarioViewSet(viewsets.ModelViewSet):
 class NivelViewSet(viewsets.ModelViewSet):
     queryset = Nivel.objects.all()
     serializer_class = NivelSerializer
-    # Ejemplo de permisos: Solo usuarios autenticados pueden ver, solo admins pueden modificar
-    # permission_classes = [IsAuthenticated] # Para lectura
-    # def get_permissions(self):
-    #     if self.action in ['create', 'update', 'partial_update', 'destroy']:
-    #         self.permission_classes = [IsAdminUser]
-    #     return super().get_permissions()
+    # Solo administradores pueden crear/modificar niveles
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            self.permission_classes = [IsAdmin]
+        else: # Para 'list', 'retrieve'
+            #self.permission_classes = [IsAuthenticated] # O [AllowAny] si quieres que sean públicos para lectura
+            self.permission_classes = [IsAdmin] # Solo admins pueden leer también
+        return super().get_permissions()
 
 # ViewSet para el modelo Materia
 class MateriaViewSet(viewsets.ModelViewSet):
     queryset = Materia.objects.all()
-    # permission_classes = [IsAuthenticated]
-    # o...
-    #authentication_classes = [] 
-    #permission_classes = [AllowAny]
+    
     def get_serializer_class(self):
         # Si la solicitud es GET (para listar o recuperar), usa MateriaReadSerializer
         if self.action in ['list', 'retrieve']:
             return MateriaReadSerializer
         # Para POST, PUT, PATCH (crear, actualizar), usa MateriaWriteSerializer
         return MateriaWriteSerializer
+    
+     # --- PERMISOS ACTUALIZADOS PARA MATERIA ---
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            self.permission_classes = [IsAdmin] # Solo admin puede CRUD
+        else: # 'list', 'retrieve'
+            self.permission_classes = [IsAuthenticated] # Todos los autenticados pueden leer (filtrado por queryset)
+        return super().get_permissions()
+
+    # --- QUERYSET ACTUALIZADO PARA MATERIA ---
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        if user.is_authenticated:
+            if user.rol == 'admin':
+                # Admin ve todas las materias
+                return queryset
+            elif user.rol == 'docente':
+                # Docente ve solo las materias a las que está asignado
+                materias_impartidas_ids = CursoDocente.objects.filter(docente=user).values_list('materia__id', flat=True)
+                queryset = queryset.filter(id__in=materias_impartidas_ids)
+            elif user.rol == 'alumno':
+                # Alumno ve solo las materias en las que está inscrito
+                materias_inscritas_ids = CursoAlumno.objects.filter(alumno=user).values_list('materia__id', flat=True)
+                queryset = queryset.filter(id__in=materias_inscritas_ids)
+            else:
+                # Otros roles (si los hubiera) o roles sin definir no ven nada
+                queryset = Materia.objects.none()
+        else:
+            # Usuarios no autenticados no ven nada
+            queryset = Materia.objects.none()
+            
+        # Si se pasa un parámetro 'materia' en la URL, se aplica un filtro adicional
+        # Esto es útil si quieres, por ejemplo, /api/materias/?materia=1 para buscar una específica
+        # dentro de las que ya tiene permiso de ver.
+        materia_id_param = self.request.query_params.get('materia', None)
+        if materia_id_param is not None:
+            queryset = queryset.filter(id=materia_id_param)
+
+        return queryset
 
 
 
 # ViewSet para la relación CursoAlumno
 class CursoAlumnoViewSet(viewsets.ModelViewSet):
     queryset = CursoAlumno.objects.all()
-    # No definimos serializer_class directamente aquí
-    authentication_classes = []
-    permission_classes = [AllowAny]
 
     def get_serializer_class(self):
         if self.action in ['list', 'retrieve']:
@@ -155,6 +200,29 @@ class CursoAlumnoViewSet(viewsets.ModelViewSet):
         if self.action == 'bulk_enroll':
             return BulkEnrollmentSerializer
         return CursoAlumnoReadSerializer # Fallback
+
+    # Permisos: Admin CRUD. Docente/Alumno solo lectura de sus asociados.
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'bulk_enroll']:
+            self.permission_classes = [IsAdmin] # Solo admin puede CRUD o bulk_enroll
+        else: # 'list', 'retrieve'
+            self.permission_classes = [IsAuthenticated] # Docentes y Alumnos autenticados pueden leer
+        return super().get_permissions()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        if user.is_authenticated and not user.rol == 'admin':
+            if user.rol == 'alumno':
+                # Alumno solo ve sus propias inscripciones
+                queryset = queryset.filter(alumno=user)
+            elif user.rol == 'docente':
+                # Docente ve inscripciones de alumnos en sus materias
+                # Materias que el docente imparte
+                materias_impartidas = Materia.objects.filter(cursodocente__docente=user)
+                queryset = queryset.filter(materia__in=materias_impartidas)
+        return queryset
 
     # Acción personalizada para inscripción masiva de alumnos
     # URL: /api/curso-alumnos/bulk_enroll/
@@ -209,8 +277,6 @@ class CursoAlumnoViewSet(viewsets.ModelViewSet):
 # ViewSet para la relación CursoDocente
 class CursoDocenteViewSet(viewsets.ModelViewSet):
     queryset = CursoDocente.objects.all()
-    authentication_classes = []
-    permission_classes = [AllowAny]
 
     def get_serializer_class(self):
         if self.action in ['list', 'retrieve']:
@@ -220,6 +286,29 @@ class CursoDocenteViewSet(viewsets.ModelViewSet):
         if self.action == 'bulk_assign':
             return BulkAssignmentSerializer
         return CursoDocenteReadSerializer # Fallback
+    
+    # Permisos: Admin CRUD. Docente/Alumno solo lectura de sus asociados.
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'bulk_assign']:
+            self.permission_classes = [IsAdmin] # Solo admin puede CRUD o bulk_assign
+        else: # 'list', 'retrieve'
+            self.permission_classes = [IsAuthenticated] # Docentes y Alumnos autenticados pueden leer
+        return super().get_permissions()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        if user.is_authenticated and not user.rol == 'admin':
+            if user.rol == 'docente':
+                # Docente solo ve sus propias asignaciones
+                queryset = queryset.filter(docente=user)
+            elif user.rol == 'alumno':
+                # Alumno ve asignaciones de docentes en sus materias
+                # Materias en las que el alumno está inscrito
+                materias_inscritas = Materia.objects.filter(cursoalumno__alumno=user)
+                queryset = queryset.filter(materia__in=materias_inscritas)
+        return queryset
 
     # Acción personalizada para asignación masiva de docentes
     # URL: /api/curso-docentes/bulk_assign/
@@ -271,11 +360,7 @@ class CursoDocenteViewSet(viewsets.ModelViewSet):
 # ViewSet para el modelo Actividad
 class ActividadViewSet(viewsets.ModelViewSet):
     queryset = Actividad.objects.all()
-        
-    # --- PERMISOS TEMPORALES PARA DESARROLLO ---
-    authentication_classes = [] 
-    permission_classes = [AllowAny] 
-    # --- FIN PERMISOS TEMPORALES ---
+    
 
     def get_serializer_class(self):
         # Si la solicitud es GET (para listar o recuperar), usa ActividadReadSerializer
@@ -284,43 +369,31 @@ class ActividadViewSet(viewsets.ModelViewSet):
         # Para POST, PUT, PATCH (crear, actualizar), usa ActividadWriteSerializer
         return ActividadWriteSerializer
 
+    # Permisos: Admin y Docente CRUD. Alumno solo Read.
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            self.permission_classes = [IsDocente] # Docentes y Admins (por IsDocente) pueden CRUD
+        else: # 'list', 'retrieve'
+            self.permission_classes = [IsAuthenticated] # Alumnos, Docentes, Admins pueden leer
+        return super().get_permissions()
+
     def get_queryset(self):
-        queryset = Actividad.objects.all()
+        queryset = super().get_queryset()
+        user = self.request.user
         
-        # Obtener el parámetro 'materia' de la URL de la solicitud (ej. /api/actividades/?materia=1)
-        materia_id = self.request.query_params.get('materia', None)
-        if materia_id is not None:
-            # Filtrar el queryset si se proporciona un ID de materia
-            queryset = queryset.filter(materia_id=materia_id)
-            
-        # Lógica de permisos para el futuro:
-        # if self.request.user.is_authenticated:
-        #     if self.request.user.rol == 'docente':
-        #         # Un docente solo ve actividades de sus materias
-        #         materias_docente_ids = CursoDocente.objects.filter(docente=self.request.user).values_list('materia__id', flat=True)
-        #         queryset = queryset.filter(materia__id__in=materias_docente_ids)
-        #     elif self.request.user.rol == 'alumno':
-        #         # Un alumno solo ve actividades de las materias en las que está inscrito
-        #         materias_alumno_ids = CursoAlumno.objects.filter(alumno=self.request.user).values_list('materia__id', flat=True)
-        #         queryset = queryset.filter(materia__id__in=materias_alumno_ids)
-        #     elif self.request.user.rol == 'admin':
-        #         # El admin ve todo, no necesita filtro adicional aquí
-        #         pass
-        # else:
-        #     # Si no está autenticado, no ve nada
-        #     queryset = Actividad.objects.none()
-            
+        if user.is_authenticated and not user.rol == 'admin':
+            if user.rol == 'docente':
+                # Docente ve actividades de sus materias
+                materias_impartidas = Materia.objects.filter(cursodocente__docente=user)
+                queryset = queryset.filter(materia__in=materias_impartidas)
+            elif user.rol == 'alumno':
+                # Alumno ve actividades de sus materias inscritas
+                materias_inscritas = Materia.objects.filter(cursoalumno__alumno=user)
+                queryset = queryset.filter(materia__in=materias_inscritas)
         return queryset
 
     # Opcional: Sobrescribir perform_create para asegurar que solo docentes/admins creen
     def perform_create(self, serializer):
-        # Lógica de permisos para el futuro:
-        # if not self.request.user.is_authenticated or self.request.user.rol not in ['docente', 'admin']:
-        #     raise PermissionDenied("Solo docentes y administradores pueden crear actividades.")
-        
-        # Asegurarse de que el usuario que crea la actividad tenga relación con la materia
-        # (si es docente, que sea su materia; si es admin, puede crear en cualquiera)
-        # Esto es más complejo y se haría con validadores o permisos personalizados.
         serializer.save()
 
 
@@ -328,13 +401,36 @@ class ActividadViewSet(viewsets.ModelViewSet):
 # ViewSet para el modelo SesionActividad
 class SesionActividadViewSet(viewsets.ModelViewSet):
     queryset = SesionActividad.objects.all()
-    authentication_classes = []
-    permission_classes = [AllowAny] # Temporalmente abierto
 
     def get_serializer_class(self):
         if self.action in ['list', 'retrieve']:
             return SesionActividadReadSerializer # Para lectura
         return SesionActividadWriteSerializer # Para escritura (create, update, partial_update)
+
+    # Permisos: Admin CRUD. Docente/Alumno Create y Read.
+    def get_permissions(self):
+        if self.action in ['create']:
+            self.permission_classes = [IsAuthenticated] # Cualquiera autenticado puede crear una sesión
+        elif self.action in ['update', 'partial_update', 'destroy']:
+            self.permission_classes = [IsAdmin] # Solo admin puede modificar/eliminar sesiones
+        else: # 'list', 'retrieve', 'end_session'
+            self.permission_classes = [IsAuthenticated] # Docentes y Alumnos autenticados pueden leer/finalizar
+        return super().get_permissions()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        if user.is_authenticated and not user.rol == 'admin':
+            if user.rol == 'alumno':
+                # Alumno solo ve sus propias sesiones
+                queryset = queryset.filter(alumno=user)
+            elif user.rol == 'docente':
+                # Docente ve sesiones de actividades en sus materias
+                materias_impartidas = Materia.objects.filter(cursodocente__docente=user)
+                # Filtra sesiones cuyas actividades pertenecen a las materias del docente
+                queryset = queryset.filter(actividad__materia__in=materias_impartidas)
+        return queryset
 
     def perform_create(self, serializer):
         # Al crear una SesionActividad, establece la fecha_hora_inicio_real con timezone.now()
@@ -344,7 +440,10 @@ class SesionActividadViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def end_session(self, request, pk=None):
         try:
-            sesion = self.get_object() 
+            sesion = self.get_object()
+            # Permiso adicional: Un alumno solo puede finalizar su propia sesión
+            if self.request.user.rol == 'alumno' and sesion.alumno != self.request.user:
+                return Response({"detail": "No tienes permiso para finalizar esta sesión."}, status=status.HTTP_403_FORBIDDEN)
             if sesion.fecha_hora_fin_real:
                 return Response({"message": "La sesión ya ha sido finalizada."}, status=status.HTTP_400_BAD_REQUEST)
             
@@ -371,6 +470,28 @@ class AnalisisEmocionViewSet(viewsets.ModelViewSet):
             return AnalisisEmocionReadSerializer # Para lectura
         return AnalisisEmocionWriteSerializer # Para escritura
 
+    # Permisos: Admin CRUD. Docente solo Read. Alumno no acceso.
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            self.permission_classes = [IsAdmin] # Solo admin puede CRUD
+        else: # 'list', 'retrieve'
+            self.permission_classes = [IsDocente] # Docentes y Admins pueden leer
+        return super().get_permissions()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        if user.is_authenticated and not user.rol == 'admin':
+            if user.rol == 'docente':
+                # Docente ve análisis de sesiones en actividades en sus materias
+                materias_impartidas = Materia.objects.filter(cursodocente__docente=user)
+                queryset = queryset.filter(sesion__actividad__materia__in=materias_impartidas)
+            elif user.rol == 'alumno':
+                # Alumno no tiene acceso a esta tabla, el permiso ya lo deniega
+                queryset = AnalisisEmocion.objects.none() # Asegurarse de que no vea nada
+        return queryset
+
     def perform_create(self, serializer):
         serializer.save()
 
@@ -380,13 +501,30 @@ class AnalisisEmocionViewSet(viewsets.ModelViewSet):
 class CalificacionViewSet(viewsets.ModelViewSet):
     queryset = Calificacion.objects.all()
     serializer_class = CalificacionSerializer
-    # permission_classes = [IsAuthenticated]
+    
+    # Permisos: Admin y Docente CRUD.
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            self.permission_classes = [IsDocente] # Docentes y Admins (por IsDocente) pueden CRUD
+        else: # 'list', 'retrieve'
+            self.permission_classes = [IsDocente] # Docentes y Admins pueden leer
+        return super().get_permissions()
 
-    # Filtrar para que un docente solo vea las calificaciones que ha puesto
     def get_queryset(self):
-        if self.request.user.is_authenticated and self.request.user.rol == 'docente':
-            return Calificacion.objects.filter(docente=self.request.user)
-        return super().get_queryset()
+        queryset = super().get_queryset()
+        user = self.request.user
+
+        if user.is_authenticated and not user.rol == 'admin':
+            if user.rol == 'docente':
+                # Docente ve calificaciones que ha puesto o de sesiones en sus materias
+                queryset = queryset.filter(
+                    Q(docente=user) | 
+                    Q(sesion__actividad__materia__cursodocente__docente=user)
+                ).distinct() # Usar distinct para evitar duplicados si una sesión tiene múltiples docentes
+            elif user.rol == 'alumno':
+                # Alumno solo ve sus propias calificaciones
+                queryset = queryset.filter(sesion__alumno=user)
+        return queryset
 
 
 

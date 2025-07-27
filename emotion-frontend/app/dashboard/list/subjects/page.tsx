@@ -15,7 +15,9 @@ import FormModal from "@/components/FormModal";
 import Table from "@/components/Table";
 import TableSearch from "@/components/TableSearch";
 
-const role = "admin"; // Simulación del rol para desarrollo
+// --- IMPORTACIÓN CLAVE: El hook useAuth ---
+import { useAuth } from '@/lib/context/AuthContext'; 
+import { useRouter } from 'next/navigation'; // Para redirigir al login
 
 import Image from "next/image";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -32,6 +34,10 @@ const columns = [
 ];
 
 const SubjectListPage = () => {
+  // --- USO CLAVE: Obtener el estado de autenticación del contexto ---
+  const { user, isAuthenticated, isLoading, hasRole, logout } = useAuth(); 
+  const router = useRouter(); // Instancia del router para redirecciones
+
   const [allSubjects, setAllSubjects] = useState<Materia[]>([]); // Almacena TODAS las materias
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,9 +46,27 @@ const SubjectListPage = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  // --- LÓGICA CLAVE: Redirección y control de acceso ---
+  useEffect(() => {
+    if (isLoading) {
+      // Si aún estamos cargando el estado de autenticación, no hacemos nada
+      return;
+    }
+    if (!isAuthenticated) {
+      // Si no está autenticado, redirigir a la página de login
+      console.log("DEBUG: Usuario no autenticado, redirigiendo a /login");
+      router.push('/login');
+      return; // Salir para evitar cargar datos o renderizar contenido
+    }
+  }, [isLoading, isAuthenticated, router]);
+
   // Función para cargar las materias desde la API
   // Usamos useCallback para memoizar la función y evitar re-creaciones innecesarias
   const fetchAllSubjects = useCallback(async () => {
+    if (!isAuthenticated || isLoading) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -51,16 +75,23 @@ const SubjectListPage = () => {
       console.log("Materias cargadas:", data);
     } catch (err: any) {
       console.error("Error al cargar materias:", err);
-      setError(err.message || "Error desconocido al cargar materias.");
+      if (err.message.includes('403') || err.message.includes('Forbidden')) {
+        setError("Acceso denegado. No tienes permiso para ver esta lista de materias.");
+      } else {
+        setError(err.message || "Error desconocido al cargar materias.");
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAuthenticated, isLoading]);
 
   // Efecto para cargar las materias al montar el componente
   useEffect(() => {
-    fetchAllSubjects();
-  }, [fetchAllSubjects]);
+    // Solo cargar materias si el usuario está autenticado y no está en un estado de carga inicial
+    if (isAuthenticated && !isLoading) {
+      fetchAllSubjects();
+    }
+  }, [isAuthenticated, isLoading, fetchAllSubjects]);
 
   // Lógica de paginación en el frontend
   // Calcula los ítems para la página actual
@@ -123,7 +154,7 @@ const SubjectListPage = () => {
               <FontAwesomeIcon icon={faEye} size="sm" />
             </button>
           </Link>
-          {role === "admin" && (
+          {hasRole('admin') && (
             <>
               <FormModal<Materia, CreateUpdateMateriaPayload>
                 table="subject"
@@ -159,6 +190,11 @@ const SubjectListPage = () => {
     );
   }
 
+  if (!isAuthenticated) {
+    // Este caso ya lo maneja el useEffect de redirección, pero es un buen fallback visual
+    return null; 
+  }
+
   if (error) {
     return (
       <div className="bg-white p-4 rounded-md flex-1 m-4 mt-0 text-center text-red-500">
@@ -181,7 +217,7 @@ const SubjectListPage = () => {
             <button className="w-8 h-8 flex items-center justify-center rounded-full bg-lamaYellow">
               <Image src="/sort.png" alt="" width={14} height={14} />
             </button>
-            {role === "admin" && (
+            {hasRole('admin') && (
               // FormModal para crear:
               // - 'onSubmit' es el callback que FormModal usará para enviar los datos
               <FormModal<Materia, CreateUpdateMateriaPayload>

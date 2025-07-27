@@ -15,6 +15,8 @@ from .views import (
     TestEmotionDetectionView
 )
 
+from . import auth_views
+
 router = DefaultRouter()
 
 # Registra cada ViewSet con el router.
@@ -33,6 +35,8 @@ router.register(r"calificaciones", CalificacionViewSet, basename="calificacion")
 
 # Define las rutas URL para tus vistas personalizadas (no ViewSets)
 urlpatterns = [
+    path('login/', auth_views.CustomAuthToken.as_view(), name='api_login'),
+    path('logout/', auth_views.LogoutView.as_view(), name='api_logout'),
     path('test-detectar-emocion/', TestEmotionDetectionView.as_view(), name='test_detectar_emocion'),
     path('resumen-admin', resumen_admin),
     path('emocion-detection/', EmocionDetectionAPIView.as_view(), name='emocion-detection'),
