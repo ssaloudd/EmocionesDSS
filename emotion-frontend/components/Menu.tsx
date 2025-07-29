@@ -20,75 +20,32 @@ const menuItems = [
         icon: "/nivel.png",
         label: "Niveles",
         href: "/dashboard/list/niveles/",
-        visible: ["admin", "teacher"],
+        visible: ["admin", "docente"],
       },
       {
         icon: "/materias.png",
         label: "Materias",
         href: "/dashboard/list/subjects/",
-        visible: ["admin", "teacher", "student"],
+        visible: ["admin", "docente", "alumno"],
+      },
+      {
+        icon: "/result.png",
+        label: "Calificaciones",
+        href: "/dashboard/list/calificaciones/",
+        visible: ["admin", "docente", "alumno"],
       },
       {
         icon: "/teacher.png",
         label: "Docentes",
         href: "/dashboard/list/teachers",
-        visible: ["admin", "teacher"],
+        visible: ["admin", "docente"],
       },
       {
         icon: "/student.png",
         label: "Alumnos",
         href: "/dashboard/list/students",
-        visible: ["admin", "teacher"],
+        visible: ["admin", "docente"],
       },
-
-      /*{
-        icon: "/lesson.png",
-        label: "Lecciones",
-        href: "/list/lessons",
-        visible: ["admin", "teacher"],
-      },
-      {
-        icon: "/exam.png",
-        label: "Exámenes",
-        href: "/list/exams",
-        visible: ["admin", "teacher", "alumno"],
-      },
-      /*{
-        icon: "/assignment.png",
-        label: "Assignments",
-        href: "/list/assignments",
-        visible: ["admin", "teacher", "alumno"],
-      },*/
-      /*{
-        icon: "/result.png",
-        label: "Resultados",
-        href: "/list/results",
-        visible: ["admin", "teacher", "alumno"],
-      },*/
-      /*{
-        icon: "/attendance.png",
-        label: "Attendance",
-        href: "/list/attendance",
-        visible: ["admin", "teacher", "student", "parent"],
-      },*/
-      /*{
-        icon: "/calendar.png",
-        label: "Events",
-        href: "/list/events",
-        visible: ["admin", "teacher", "alumno"],
-      },*/
-      /*{
-        icon: "/message.png",
-        label: "Messages",
-        href: "/list/messages",
-        visible: ["admin", "teacher", "student", "parent"],
-      },
-      {
-        icon: "/announcement.png",
-        label: "Announcements",
-        href: "/list/announcements",
-        visible: ["admin", "teacher", "student", "parent"],
-      },*/
     ],
   },
   {
@@ -98,36 +55,24 @@ const menuItems = [
         icon: "/claseDoc.png",
         label: "Cursos de Docentes",
         href: "/dashboard/list/course-assignments",
-        visible: ["admin", "teacher"],
+        visible: ["admin", "docente"],
       },
       {
         icon: "/claseAlu.png",
         label: "Cursos de Alumnos",
         href: "/dashboard/list/course-enrollments",
-        visible: ["admin", "teacher"],
+        visible: ["admin", "docente"],
       },
     ],
   },
   {
     title: "OTROS",
     items: [
-      /*{
-        icon: "/profile.png",
-        label: "Profile",
-        href: "/profile",
-        visible: ["admin", "teacher", "student"],
-      },
-      {
-        icon: "/setting.png",
-        label: "Settings",
-        href: "/settings",
-        visible: ["admin", "teacher", "student", "parent"],
-      },*/
       {
         icon: "/logout.png",
         label: "Logout",
         href: "/logout",
-        visible: ["admin", "teacher", "student"],
+        visible: ["admin", "docente", "alumno"],
       },
     ],
   },

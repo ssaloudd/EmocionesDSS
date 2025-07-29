@@ -13,6 +13,8 @@ import { Nivel, CreateUpdateNivelPayload } from '@/lib/api/niveles';
 import { BulkEnrollmentPayload } from '@/lib/api/curso_alumnos';
 import { BulkAssignmentPayload } from '@/lib/api/curso_docentes';
 import { Actividad, CreateUpdateActividadPayload } from '@/lib/api/actividades'; 
+import { Calificacion, CreateCalificacionPayload } from '@/lib/api/calificaciones';
+import { SesionActividad } from '@/lib/api/sesiones_actividad';
 
 // Importa las interfaces de props de los formularios internos
 import { SubjectFormProps } from "./forms/SubjectForm";
@@ -23,6 +25,7 @@ import { NivelFormProps } from "./forms/NivelForm";
 import { CourseEnrollmentFormProps } from "./forms/CourseEnrollmentForm";
 import { CourseAssignmentFormProps } from "./forms/CourseAssignmentForm";
 import { ActivityFormProps } from "./forms/ActivityForm";
+import { CalificacionFormProps } from "./forms/CalificacionForm";
 
 // USE LAZY LOADING para los formularios
 // Los componentes dinámicos no necesitan ser genéricos aquí, solo sus props
@@ -50,6 +53,9 @@ const CourseAssignmentForm = dynamic<CourseAssignmentFormProps>(() => import("./
 const ActivityForm = dynamic<ActivityFormProps>(() => import("./forms/ActivityForm"), {
   loading: () => <h1>Cargando formulario de Actividad...</h1>,
 });
+const CalificacionForm = dynamic<CalificacionFormProps>(() => import("./forms/CalificacionForm"), {
+  loading: () => <h1>Cargando formulario de Calificación...</h1>,
+});
 
 // Mapeo de nombres de tabla a componentes de formulario.
 // Ahora, el valor es el componente React en sí, no una función que lo renderiza.
@@ -62,6 +68,7 @@ const forms = {
   "course-enrollment": CourseEnrollmentForm,
   "course-assignment": CourseAssignmentForm,
   activity: ActivityForm,
+  calificacion: CalificacionForm,
   // Se añade otros formularios aquí...
 };
 
@@ -77,6 +84,9 @@ interface FormModalProps<TData, TPayload> {
   onSubmit?: (formData: TPayload) => void;
   onConfirm?: () => void;
   materiaId?: number;
+  // Nuevas props para CalificacionForm
+  availableSesiones?: SesionActividad[];
+  availableDocentes?: Usuario[];
 }
 
 // El componente FormModal ahora es genérico
@@ -89,6 +99,8 @@ const FormModal = <TData, TPayload>(
     onSubmit,
     onConfirm,
     materiaId,
+    availableSesiones, // Recibe availableSesiones
+    availableDocentes, // Recibe availableDocentes
   }: FormModalProps<TData, TPayload>
 ) => {
   const size = type === "create" ? "w-8 h-8" : "w-7 h-7";
@@ -130,6 +142,8 @@ const FormModal = <TData, TPayload>(
     } else if (type === "create" || type === "update") {
       const SpecificForm = forms[table]; // Obtiene el componente React directamente
       let typedData: any;
+      let specificProps: any = {};
+
       if (SpecificForm) {
         if (table === "subject") {
           typedData = data as Materia | undefined;
@@ -150,6 +164,11 @@ const FormModal = <TData, TPayload>(
         } else if (table === "activity") {
           // Nuevo caso para actividad
           typedData = data as Actividad | undefined;
+          specificProps.materiaId = materiaId;
+        } else if (table === 'calificacion') { // Nuevo caso para Calificacion
+            typedData = data as Calificacion | undefined;
+            specificProps.availableSesiones = availableSesiones; // Pasa las sesiones disponibles
+            specificProps.availableDocentes = availableDocentes; // Pasa los docentes disponibles
         }
 
         // Se añade más 'else if' para otros tipos de tabla
@@ -161,6 +180,7 @@ const FormModal = <TData, TPayload>(
             onSubmit={onSubmit as (formData: any) => void}
             onClose={handleCloseModal}
             materiaId={materiaId} // Pasa materiaId al formulario si existe
+            {...specificProps} // Pasa las props específicas
           />
         );
       } else {

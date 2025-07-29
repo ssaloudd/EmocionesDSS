@@ -1,7 +1,15 @@
+// Define la URL base de tu API de Django
+// No es necesario definir API_URL aquí si authenticatedFetch ya lo usa internamente
 import { authenticatedFetch } from './authenticated-api'; // Importa la nueva función
-// No es necesario importar API_BASE_URL directamente aquí si authenticatedFetch ya lo usa
-// import { API_BASE_URL } from './config'; 
 
+import { Usuario } from './users'; // Necesitamos la interfaz Usuario para CursoDocenteMinimal
+
+// Minimal interface for CursoDocente when nested in Materia's cursodocente_set
+// Solo necesitamos el ID del docente para el filtro en el frontend
+export interface CursoDocenteMinimal {
+  id: number;
+  docente: { id: number }; // Solo el ID del docente
+}
 
 // Interfaz para el objeto Materia tal como lo devuelve Django MateriaSerializer con depth=1
 export interface Materia {
@@ -13,9 +21,13 @@ export interface Materia {
     id: number;
     nombre: string;
   };
+  // CAMBIO CLAVE: Añadir la relación inversa cursodocente_set
+  // Es opcional porque puede que no siempre esté presente o completamente poblado
+  cursodocente_set?: CursoDocenteMinimal[]; 
 }
 
 // Interfaz para los datos que se envían al crear/actualizar una Materia
+// Para 'nivel', se espera solo el ID del Nivel
 export interface CreateUpdateMateriaPayload {
   nombre: string;
   nrc: string;

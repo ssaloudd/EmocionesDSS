@@ -25,6 +25,18 @@ class NivelSerializer(serializers.ModelSerializer):
 
 
 
+# --- Serializadores de CursoDocente (Minimal para MateriaReadSerializer) ---
+# Este serializador es solo para anidar la relación inversa cursodocente_set en MateriaReadSerializer
+class CursoDocenteMinimalSerializer(serializers.ModelSerializer):
+    # Solo necesitamos el ID del docente para el filtro en el frontend
+    docente = serializers.PrimaryKeyRelatedField(read_only=True) 
+
+    class Meta:
+        model = CursoDocente
+        fields = ['id', 'docente'] # Incluimos el ID de la relación y el ID del docente
+
+
+
 # --- Serializadores de Materia (Separados para Lectura y Escritura) ---
 
 # Serializador para la escritura de Materia (POST, PUT, PATCH)
@@ -40,6 +52,8 @@ class MateriaWriteSerializer(serializers.ModelSerializer):
 # Anida el objeto Nivel completo usando NivelSerializer
 class MateriaReadSerializer(serializers.ModelSerializer):
     nivel = NivelSerializer() # Aquí anidamos el serializador de Nivel
+    # Usamos CursoDocenteMinimalSerializer para evitar la recursión infinita
+    cursodocente_set = CursoDocenteMinimalSerializer(many=True, read_only=True) 
 
     class Meta:
         model = Materia
@@ -204,10 +218,23 @@ class AnalisisEmocionReadSerializer(serializers.ModelSerializer):
 
 # --- Serializadores de Calificacion ---
 
-class CalificacionSerializer(serializers.ModelSerializer):
-    # Asegúrate de que los campos relacionados usen los serializadores de lectura
-    sesion = SesionActividadReadSerializer(read_only=True) # Usa SesionActividadReadSerializer
-    docente = UsuarioSerializer(read_only=True)
+class CalificacionWriteSerializer(serializers.ModelSerializer):
+    sesion = serializers.PrimaryKeyRelatedField(queryset=SesionActividad.objects.all())
+    docente = serializers.PrimaryKeyRelatedField(queryset=Usuario.objects.filter(rol='docente')) 
+
+    class Meta:
+        model = Calificacion
+        fields = ['id', 'sesion', 'docente', 'nota', 'observaciones']
+        read_only_fields = ['fecha_calificacion'] # 'fecha_calificacion' se gestiona automáticamente
+
+    def validate(self, data):
+        return data
+
+# Serializador para la lectura de Calificacion (GET)
+# Anida los objetos completos de SesionActividad y Usuario (docente)
+class CalificacionReadSerializer(serializers.ModelSerializer):
+    sesion = SesionActividadReadSerializer() # Anida el serializador de SesionActividad para lectura
+    docente = UsuarioSerializer() # Anida el serializador de Usuario para lectura
 
     class Meta:
         model = Calificacion

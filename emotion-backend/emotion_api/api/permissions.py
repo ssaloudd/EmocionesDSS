@@ -54,3 +54,48 @@ class IsAdminOrReadSelf(permissions.BasePermission):
             return True
         
         return False # Denegar el resto
+    
+class CalificacionPermissions(permissions.BasePermission):
+    """
+    Permiso personalizado para el modelo Calificacion:
+    - Admin y Docente: Acceso completo (lectura y escritura).
+    - Alumno: Solo acceso de lectura (GET, HEAD, OPTIONS).
+    """
+    def has_permission(self, request, view):
+        # El usuario debe estar autenticado para cualquier operación de Calificacion
+        if not request.user or not request.user.is_authenticated:
+            return False
+
+        # Los roles 'admin' y 'docente' tienen acceso CRUD completo
+        if request.user.rol in ['admin', 'docente']:
+            return True
+        
+        # El rol 'alumno' solo tiene acceso de lectura (métodos seguros)
+        if request.user.rol == 'alumno':
+            return request.method in permissions.SAFE_METHODS # SAFE_METHODS = ('GET', 'HEAD', 'OPTIONS')
+
+        return False # Denegar por defecto a cualquier otro rol o si no cumple las condiciones
+
+    def has_object_permission(self, request, view, obj):
+        # Permisos a nivel de objeto para Calificacion
+        user = request.user
+
+        # Los administradores tienen acceso completo a cualquier objeto
+        if user.rol == 'admin':
+            return True
+
+        # Los docentes pueden leer cualquier calificación (ya manejado por has_permission/get_queryset)
+        # Para operaciones de escritura (PUT, PATCH, DELETE), un docente solo puede modificar/eliminar
+        # las calificaciones que él mismo ha creado.
+        if user.rol == 'docente':
+            if request.method in permissions.SAFE_METHODS: # Operaciones de lectura
+                return True # El docente puede leer este objeto específico
+            else: # Operaciones de escritura (PUT, PATCH, DELETE)
+                return obj.docente == user # El docente solo puede modificar/eliminar sus propias calificaciones
+
+        # Los alumnos solo pueden leer (manejado por has_permission) y solo sus propias calificaciones
+        # (manejado por get_queryset). No hay permisos de escritura a nivel de objeto para alumnos.
+        if user.rol == 'alumno':
+            return request.method in permissions.SAFE_METHODS and obj.sesion.alumno == user
+
+        return False # Denegar por defecto

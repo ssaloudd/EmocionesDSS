@@ -9,12 +9,10 @@ import {
   sendEmotionFrame,
   SesionActividad,
 } from "@/lib/api/sesiones_actividad";
-import { Usuario, getUsers } from "@/lib/api/users";
 import Image from "next/image";
 
-// Simulación de usuario logueado (reemplazar con autenticación real)
-const MOCKED_ALUMNO_ID = 2;
-const MOCKED_ALUMNO_ROL = "alumno";
+// --- IMPORTACIÓN CLAVE: El hook useAuth ---
+import { useAuth } from '@/lib/context/AuthContext';
 
 interface RealizarActividadPageProps {
   params: { materiaId: string; actividadId: string };
@@ -23,6 +21,9 @@ interface RealizarActividadPageProps {
 const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
   const params = useParams();
   const router = useRouter();
+
+  // --- USO CLAVE: Obtener el estado de autenticación del contexto ---
+  const { user, isAuthenticated, isLoading, hasRole } = useAuth();
 
   const materiaId = params.materiaId
     ? parseInt(params.materiaId as string)
@@ -42,7 +43,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
   const [emotionConfidence, setEmotionConfidence] = useState<number | null>(
     null
   );
-  const [loading, setLoading] = useState(true);
+  const [loadingPage, setLoadingPage] = useState(true); // Estado de carga inicial de la página
   const [error, setError] = useState<string | null>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null); // Almacena el stream de la cámara
   const [sessionStarted, setSessionStarted] = useState(false);
@@ -50,24 +51,6 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
 
   const [remainingTime, setRemainingTime] = useState<number | null>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
-
-  const getCurrentUserId = useCallback(async (): Promise<number | null> => {
-    try {
-      const users = await getUsers({ rol: MOCKED_ALUMNO_ROL });
-      const mockedUser = users.find((user) => user.id === MOCKED_ALUMNO_ID);
-      if (mockedUser) {
-        return mockedUser.id;
-      } else {
-        setError(
-          "Usuario simulado no encontrado. Asegúrate de tener un alumno con ID 6."
-        );
-        return null;
-      }
-    } catch (err: any) {
-      setError(`Error al obtener usuario simulado: ${err.message}`);
-      return null;
-    }
-  }, []);
 
   // Función para finalizar la sesión
   const isEndingRef = useRef(false);
@@ -110,25 +93,46 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
     setSessionEnded(true);
   }, [sesionActividad, sessionEnded, cameraStream]);
 
-  // Limpiar intervalo y finalizar sesión al desmontar el componente
-  /*useEffect(() => {
+  // useEffect para limpiar intervalos y stream al desmontar o al finalizar la sesión
+  useEffect(() => {
     return () => {
-      // Solo finalizar si verdaderamente se había iniciado sesión
-      if (sessionStarted) {
-        endCurrentSession();
+      console.log("DEBUG: Cleanup effect ejecutado.");
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop());
+        setCameraStream(null);
       }
     };
-  }, [sessionStarted, endCurrentSession]);*/
+  }, [cameraStream]); // Depende de cameraStream para asegurar que se detenga si cambia o se desmonta
 
-  // useEffect 1: Cargar detalles de la actividad
+  // useEffect 1: Cargar detalles de la actividad y controlar acceso
   useEffect(() => {
     const fetchActivityDetails = async () => {
-      if (!actividadId || !materiaId) {
-        setError("IDs de materia o actividad no proporcionados.");
-        setLoading(false);
+      if (isLoading) {
+        return; // Esperar a que la autenticación cargue
+      }
+      if (!isAuthenticated) {
+        console.log("DEBUG: Usuario no autenticado, redirigiendo a /login");
+        router.push('/login');
         return;
       }
-      setLoading(true);
+      // Esta página es para que el alumno realice la actividad.
+      // Otros roles pueden verla, pero no podrán iniciar la funcionalidad de "realizar".
+      // No hay redirección estricta por rol aquí, la funcionalidad se controla más abajo.
+
+      if (!actividadId || !materiaId) {
+        setError("IDs de materia o actividad no proporcionados.");
+        setLoadingPage(false);
+        return;
+      }
+      setLoadingPage(true); // Iniciar carga de la página
       setError(null);
       try {
         const activities = await getActivities(materiaId);
@@ -138,26 +142,26 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
         if (foundActivity) {
           setActividad(foundActivity);
         } else {
-          setError("Actividad no encontrada.");
+          setError("Actividad no encontrada o no tienes permiso para verla.");
         }
       } catch (err: any) {
+        console.error("Error al cargar detalles de la actividad:", err);
         setError(`Error al cargar detalles de la actividad: ${err.message}`);
       } finally {
-        setLoading(false);
+        setLoadingPage(false); // Finalizar carga de la página
       }
     };
     fetchActivityDetails();
-  }, [actividadId, materiaId]);
+  }, [actividadId, materiaId, isAuthenticated, isLoading, router]); // Dependencias de autenticación y router
 
-  // useEffect 2: Acceder a la cámara cuando el videoRef esté disponible
+  // useEffect 2: Acceder a la cámara cuando el videoRef y la autenticación estén disponibles
   useEffect(() => {
-    // Si ya finalizó la sesión, no permitas re-iniciar la cámara
-    if (sessionEnded) {
-      // Por si acaso queda algún stream abierto
-      if (cameraStream) {
+    // Solo iniciar cámara si la página no está en carga, está autenticado y no ha terminado la sesión
+    if (loadingPage || !isAuthenticated || sessionEnded) {
+      if (sessionEnded && cameraStream) { // Asegurarse de detener la cámara si la sesión ya terminó
         cameraStream.getTracks().forEach((t) => t.stop());
         setCameraStream(null);
-        console.log("DEBUG: Cámara detenida tras sesión finalizada.");
+        console.log("DEBUG: Cámara detenida porque la sesión ya finalizó.");
       }
       return;
     }
@@ -165,13 +169,12 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
     let active = true; // bandera para evitar operaciones si el componente ya se desmontó
 
     const startCamera = async () => {
-      if (!videoRef.current || cameraStream) return;
+      if (!videoRef.current || cameraStream) return; // Si ya hay stream, no iniciar de nuevo
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
 
         if (!active || !videoRef.current) {
-          // Si el componente ya se desmontó, no hagas nada con el stream
           stream.getTracks().forEach((track) => track.stop());
           return;
         }
@@ -199,32 +202,42 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
 
     startCamera();
 
-    // Cleanup: detener la cámara si el componente se desmonta
+    // Cleanup: detener la cámara si el componente se desmonta o se cambia de página
     return () => {
       active = false;
       if (cameraStream) {
         cameraStream.getTracks().forEach((track) => track.stop());
         setCameraStream(null);
-        console.log("DEBUG: Cámara detenida en cleanup.");
+        console.log("DEBUG: Cámara detenida en cleanup del useEffect.");
       }
     };
-  }, [videoRef.current, cameraStream, sessionEnded]); // Depende de videoRef.current y cameraStream
+  }, [videoRef.current, cameraStream, sessionEnded, isAuthenticated, loadingPage]); // Dependencias
 
   // useEffect 3: Iniciar SesionActividad y Análisis de Emoción una vez que todo esté listo
   useEffect(() => {
     const startSessionAndEmotionDetection = async () => {
-      if (!actividad || !cameraStream || sessionStarted) {
-        // console.log("DEBUG: Esperando para iniciar sesión...", { actividad: !!actividad, cameraStream: !!cameraStream, sessionStarted });
+      // Solo iniciar si:
+      // - La página no está cargando
+      // - El usuario está autenticado
+      // - El usuario es un ALUMNO (solo alumnos realizan la actividad)
+      // - La actividad ha sido cargada
+      // - El stream de la cámara está disponible
+      // - La sesión aún no ha comenzado
+      if (loadingPage || !isAuthenticated || !hasRole('alumno') || !actividad || !cameraStream || sessionStarted) {
+        console.log("DEBUG: Esperando para iniciar sesión o no cumple requisitos.", {
+          loadingPage, isAuthenticated, isAlumno: hasRole('alumno'), actividad: !!actividad, cameraStream: !!cameraStream, sessionStarted
+        });
         return;
       }
 
-      setLoading(true); // Mostrar loading mientras se crea la sesión
+      setLoadingPage(true); // Mostrar loading mientras se crea la sesión
       setError(null);
 
       try {
-        const alumnoId = await getCurrentUserId();
+        const alumnoId = user?.id; // Obtener el ID real del alumno desde el contexto
         if (!alumnoId) {
-          setLoading(false);
+          setError("ID de alumno no disponible. Por favor, inicie sesión como alumno.");
+          setLoadingPage(false);
           return;
         }
 
@@ -240,20 +253,13 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
 
         const mins = actividad.duracion_analisis_minutos;
         if (mins > 0) {
-          // calcula segundos
           const durationInSeconds = mins * 60;
-          console.log(
-            "DEBUG: iniciando contador con",
-            durationInSeconds,
-            "segundos"
-          );
+          console.log("DEBUG: iniciando contador con", durationInSeconds, "segundos");
           setRemainingTime(durationInSeconds);
 
-          // limpia posible countdown previo
           if (countdownRef.current) {
             clearInterval(countdownRef.current);
             countdownRef.current = null;
-            console.log("DEBUG: se limpió un countdown previo");
           }
 
           countdownRef.current = setInterval(() => {
@@ -261,12 +267,9 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
               if (prev === null) return null;
 
               if (prev <= 1) {
-                // fin de contador
                 clearInterval(countdownRef.current!);
                 countdownRef.current = null;
-                console.log(
-                  "DEBUG: contador llegó a 0, forzando endCurrentSession"
-                );
+                console.log("DEBUG: contador llegó a 0, forzando endCurrentSession");
                 endCurrentSession();
                 return 0;
               }
@@ -274,9 +277,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
             });
           }, 1000);
         } else {
-          console.log(
-            "DEBUG: duración de análisis no positiva, no se inicia contador automático"
-          );
+          console.log("DEBUG: duración de análisis no positiva, no se inicia contador automático");
         }
 
         const captureInterval = setInterval(async () => {
@@ -318,6 +319,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
                   }
                 } catch (err: any) {
                   console.error("Error al enviar frame de emoción:", err);
+                  // Podrías manejar errores específicos aquí, ej. si el backend deniega por rol
                 }
               };
             },
@@ -327,7 +329,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
         }, 1500); // Frecuencia de envío de frames
 
         intervalRef.current = captureInterval;
-        
+
       } catch (err: any) {
         console.error("Error al iniciar sesión o detección:", err);
         setError(`Error al iniciar sesión o detección: ${err.message}`);
@@ -337,7 +339,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
           setCameraStream(null);
         }
       } finally {
-        setLoading(false);
+        setLoadingPage(false); // Finalizar carga de la página
       }
     };
 
@@ -346,8 +348,12 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
     actividad,
     cameraStream,
     sessionStarted,
-    getCurrentUserId,
+    user, // Depende del objeto user para obtener el ID real
+    isAuthenticated,
+    isLoading,
+    hasRole,
     endCurrentSession,
+    loadingPage // Asegurarse de que no se ejecute si la página está cargando
   ]);
 
   // Renderizado condicional
@@ -359,8 +365,8 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
     );
   }
 
-  if (loading && !sessionStarted) {
-    // Mostrar loading solo al inicio, no durante la sesión
+  // Mostrar loading inicial de la página
+  if (loadingPage && !sessionStarted) {
     return (
       <div className="bg-white p-4 rounded-md flex-1 m-4 mt-0 text-center">
         Cargando actividad y preparando detección...
@@ -368,6 +374,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
     );
   }
 
+  // Mostrar error si existe
   if (error) {
     return (
       <div className="bg-white p-4 rounded-md flex-1 m-4 mt-0 text-center text-red-500">
@@ -376,14 +383,16 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
     );
   }
 
+  // Si no se encontró la actividad (y no hubo error de carga general)
   if (!actividad) {
     return (
       <div className="bg-white p-4 rounded-md flex-1 m-4 mt-0 text-center">
-        Actividad no encontrada.
+        Actividad no encontrada o no disponible.
       </div>
     );
   }
 
+  // Contenido principal de la página
   return (
     <div className="bg-white p-4 rounded-md flex-1 m-4 mt-0 flex flex-col items-center">
       <h1 className="text-3xl font-bold mb-4">Actividad: {actividad.nombre}</h1>
@@ -392,9 +401,10 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
         Duración de Análisis: {actividad.duracion_analisis_minutos} minutos
       </p>
 
-      {!cameraStream && ( // Muestra el mensaje si no hay stream de cámara
+      {/* Mensaje si no se pudo acceder a la cámara */}
+      {!cameraStream && (
         <p className="text-red-500 mb-4">
-          No es posible el acceso a la cámara.
+          No es posible el acceso a la cámara. Asegúrate de dar permisos.
         </p>
       )}
 
@@ -405,7 +415,8 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
           playsInline
           className="w-full h-full object-cover"
         />
-        {MOCKED_ALUMNO_ROL === "alumno" && (
+        {/* Mostrar emoción solo si el usuario es alumno y la sesión está activa */}
+        {hasRole('alumno') && sessionStarted && !sessionEnded && (
           <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
             Emoción: {currentEmotion || "Detectando..."}
             {currentEmotion &&
@@ -423,7 +434,12 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
             <span className="text-blue-600">Sesión en curso...</span>
           )
         ) : (
-          <span className="text-gray-500">Esperando inicio de sesión...</span>
+          // Mostrar mensaje diferente si el usuario no es alumno
+          hasRole('alumno') ? (
+            <span className="text-gray-500">Preparando sesión...</span>
+          ) : (
+            <span className="text-gray-500">Solo los alumnos pueden realizar esta actividad.</span>
+          )
         )}
       </div>
 

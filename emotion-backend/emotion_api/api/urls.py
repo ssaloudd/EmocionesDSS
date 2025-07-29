@@ -12,7 +12,8 @@ from .views import (
     AnalisisEmocionViewSet,
     CalificacionViewSet,
     EmocionDetectionAPIView, # Vista para la detección de emociones
-    TestEmotionDetectionView
+    TestEmotionDetectionView,
+    LoginView
 )
 
 from . import auth_views
@@ -35,11 +36,14 @@ router.register(r"calificaciones", CalificacionViewSet, basename="calificacion")
 
 # Define las rutas URL para tus vistas personalizadas (no ViewSets)
 urlpatterns = [
-    path('login/', auth_views.CustomAuthToken.as_view(), name='api_login'),
-    path('logout/', auth_views.LogoutView.as_view(), name='api_logout'),
+    #path('login/', auth_views.CustomAuthToken.as_view(), name='api_login'),
+    #path('logout/', auth_views.LogoutView.as_view(), name='api_logout'),
     path('test-detectar-emocion/', TestEmotionDetectionView.as_view(), name='test_detectar_emocion'),
     path('resumen-admin', resumen_admin),
     path('emocion-detection/', EmocionDetectionAPIView.as_view(), name='emocion-detection'),
+
+    # --- NUEVA RUTA PARA EL LOGIN ---
+    path('login/', LoginView.as_view(), name='login'),
 
     # Incluye las URLs generadas por el router
     # Esto debe ir al final para que las rutas específicas no sean sobrescritas

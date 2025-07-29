@@ -1,89 +1,76 @@
-const API_URL = "http://localhost:8000/api";
+import { authenticatedFetch } from './authenticated-api'; // Import the new authenticated fetch utility
 
-// Importar interfaces necesarias de otros módulos
-import { Materia } from './subjects'; // Para el objeto Materia anidado
-import { Usuario } from './users';   // Para el objeto Usuario anidado
+// Import necessary interfaces from other modules
+import { Materia } from './subjects'; // For the nested Materia object
+import { Usuario } from './users';    // For the nested Usuario object
 
-// Interfaz para la lectura de CursoAlumno (viene del backend con objetos anidados)
+// Interface for reading CursoAlumno (comes from the backend with nested objects)
 export interface CursoAlumno {
   id: number;
-  alumno: Usuario; // Objeto Usuario completo
-  materia: Materia; // Objeto Materia completo
-  fecha_inscripcion: string; // La fecha como string (ej. "YYYY-MM-DD")
+  alumno: Usuario; // Complete Usuario object
+  materia: Materia; // Complete Materia object
+  fecha_inscripcion: string; // Date as string (e.g., "YYYY-MM-DD")
 }
 
-// Interfaz para la escritura de CursoAlumno (espera IDs)
+// Interface for writing CursoAlumno (expects IDs)
 export interface CreateCursoAlumnoPayload {
-  alumno: number; // Solo el ID del alumno
-  materia: number; // Solo el ID de la materia
+  alumno: number; // Only the ID of the student
+  materia: number; // Only the ID of the subject
 }
 
-// Interfaz para la operación de inscripción masiva
+// Interface for the bulk enrollment operation
 export interface BulkEnrollmentPayload {
   materia_id: number;
-  alumno_ids: number[]; // Lista de IDs de alumnos
+  alumno_ids: number[]; // List of student IDs
 }
 
 /**
- * Obtiene todas las inscripciones de cursos.
- * @returns Una promesa que resuelve a un array de objetos CursoAlumno.
+ * Gets all course enrollments.
+ * @returns A promise that resolves to an array of CursoAlumno objects.
  */
 export async function getCursoAlumnos(): Promise<CursoAlumno[]> {
-  const res = await fetch(`${API_URL}/curso-alumnos/`);
-  if (!res.ok) {
-    throw new Error(`Error al obtener inscripciones de alumnos: ${res.statusText}`);
-  }
-  return res.json();
+  // Use authenticatedFetch to include the token and handle the base URL
+  return authenticatedFetch<CursoAlumno[]>('/api/curso-alumnos/');
 }
 
 /**
- * Crea una nueva inscripción de curso para un alumno.
- * (Aunque usaremos más el bulk, esta es para casos individuales)
- * @param payload Los datos de la inscripción a crear.
- * @returns Una promesa que resuelve a la nueva inscripción creada.
+ * Creates a new course enrollment for a student.
+ * (Although bulk enrollment will be used more, this is for individual cases)
+ * @param payload The data for the enrollment to create.
+ * @returns A promise that resolves to the newly created enrollment.
  */
 export async function createCursoAlumno(payload: CreateCursoAlumnoPayload): Promise<CursoAlumno> {
-  const res = await fetch(`${API_URL}/curso-alumnos/`, {
+  // Use authenticatedFetch to include the token and handle the base URL
+  return authenticatedFetch<CursoAlumno>('/api/curso-alumnos/', {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // authenticatedFetch already sets 'Content-Type': 'application/json' by default
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(`Error al crear inscripción: ${res.statusText} - ${JSON.stringify(errorData)}`);
-  }
-  return res.json();
 }
 
 /**
- * Elimina una inscripción de curso.
- * @param id El ID de la inscripción a eliminar.
- * @returns Una promesa que resuelve a true si la eliminación fue exitosa.
+ * Deletes a course enrollment.
+ * @param id The ID of the enrollment to delete.
+ * @returns A promise that resolves to true if the deletion was successful.
  */
 export async function deleteCursoAlumno(id: number): Promise<boolean> {
-  const res = await fetch(`${API_URL}/curso-alumnos/${id}/`, {
+  // Use authenticatedFetch to include the token and handle the base URL
+  await authenticatedFetch<void>(`/api/curso-alumnos/${id}/`, { // authenticatedFetch returns Promise<T>
     method: "DELETE",
   });
-  if (!res.ok) {
-    throw new Error(`Error al eliminar inscripción: ${res.statusText}`);
-  }
-  return res.ok;
+  return true; // If authenticatedFetch did not throw an error, the deletion was successful
 }
 
 /**
- * Realiza una inscripción masiva de alumnos a una materia.
- * @param payload Los datos para la inscripción masiva (materia_id, alumno_ids).
- * @returns Una promesa que resuelve a la respuesta del backend.
+ * Performs a bulk enrollment of students to a subject.
+ * @param payload The data for the bulk enrollment (materia_id, alumno_ids).
+ * @returns A promise that resolves to the backend's response.
  */
 export async function bulkEnrollStudents(payload: BulkEnrollmentPayload): Promise<any> {
-  const res = await fetch(`${API_URL}/curso-alumnos/bulk_enroll/`, {
+  // Use authenticatedFetch to include the token and handle the base URL
+  return authenticatedFetch<any>('/api/curso-alumnos/bulk_enroll/', {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // authenticatedFetch already sets 'Content-Type': 'application/json' by default
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(`Error en inscripción masiva: ${res.statusText} - ${JSON.stringify(errorData)}`);
-  }
-  return res.json();
 }

@@ -13,7 +13,11 @@ from rest_framework.permissions import IsAuthenticated, AllowAny # Importa permi
 from rest_framework.authentication import SessionAuthentication, BasicAuthentication
 from tensorflow.keras.models import load_model
 
-from .permissions import IsAdmin, IsDocente, IsAlumno, IsAdminOrReadSelf 
+# Importaciones para autenticación
+from django.contrib.auth import authenticate, login # Importa authenticate y login
+from rest_framework.authtoken.models import Token # Importa el modelo Token
+
+from .permissions import IsAdmin, IsDocente, IsAlumno, IsAdminOrReadSelf, CalificacionPermissions
 
 from .models import (
     Usuario,
@@ -44,7 +48,8 @@ from .serializers import (
     SesionActividadReadSerializer,
     AnalisisEmocionWriteSerializer,
     AnalisisEmocionReadSerializer,
-    CalificacionSerializer,
+    CalificacionWriteSerializer, # Importa el serializador de escritura
+    CalificacionReadSerializer,   # Importa el serializador de lectura
     EmotionFrameSerializer
 )
 
@@ -500,31 +505,59 @@ class AnalisisEmocionViewSet(viewsets.ModelViewSet):
 # ViewSet para el modelo Calificacion
 class CalificacionViewSet(viewsets.ModelViewSet):
     queryset = Calificacion.objects.all()
-    serializer_class = CalificacionSerializer
-    
-    # Permisos: Admin y Docente CRUD.
-    def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            self.permission_classes = [IsDocente] # Docentes y Admins (por IsDocente) pueden CRUD
-        else: # 'list', 'retrieve'
-            self.permission_classes = [IsDocente] # Docentes y Admins pueden leer
-        return super().get_permissions()
+    # Aplica las clases de permiso personalizadas
+    permission_classes = [IsAuthenticated, CalificacionPermissions]
+    # No es necesario definir authentication_classes si IsAuthenticated ya está en permission_classes
+
+    def get_serializer_class(self):
+        # Usa el serializador de lectura para listar y recuperar (GET)
+        if self.action in ['list', 'retrieve']:
+            return CalificacionReadSerializer
+        # Usa el serializador de escritura para crear, actualizar y actualizar parcialmente (POST, PUT, PATCH)
+        return CalificacionWriteSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset()
         user = self.request.user
+        queryset = Calificacion.objects.all() # Queryset base
 
-        if user.is_authenticated and not user.rol == 'admin':
-            if user.rol == 'docente':
-                # Docente ve calificaciones que ha puesto o de sesiones en sus materias
-                queryset = queryset.filter(
-                    Q(docente=user) | 
-                    Q(sesion__actividad__materia__cursodocente__docente=user)
-                ).distinct() # Usar distinct para evitar duplicados si una sesión tiene múltiples docentes
+        if user.is_authenticated:
+            if user.rol == 'admin':
+                return queryset # El administrador ve todas las calificaciones
+            elif user.rol == 'docente':
+                # Un docente ve las calificaciones que él mismo ha puesto
+                # Y las calificaciones de los alumnos en las materias que él imparte.
+                
+                # Calificaciones puestas por este docente
+                grades_given_by_docente = queryset.filter(docente=user)
+
+                # Calificaciones de alumnos en las materias de este docente
+                # 1. Obtener IDs de las materias que el docente imparte
+                materias_docente_ids = CursoDocente.objects.filter(docente=user).values_list('materia__id', flat=True)
+                # 2. Obtener IDs de los alumnos inscritos en esas materias
+                alumnos_en_materias_ids = CursoAlumno.objects.filter(materia__id__in=materias_docente_ids).values_list('alumno__id', flat=True)
+                # 3. Obtener IDs de las sesiones de actividad de esos alumnos
+                sesiones_alumnos_ids = SesionActividad.objects.filter(alumno__id__in=alumnos_en_materias_ids).values_list('id', flat=True)
+                # 4. Filtrar las calificaciones por esas sesiones
+                grades_for_their_students = queryset.filter(sesion__id__in=sesiones_alumnos_ids)
+
+                # Combinar ambos querysets y eliminar duplicados
+                return (grades_given_by_docente | grades_for_their_students).distinct()
+
             elif user.rol == 'alumno':
-                # Alumno solo ve sus propias calificaciones
-                queryset = queryset.filter(sesion__alumno=user)
-        return queryset
+                # Un alumno solo ve las calificaciones de sus propias sesiones
+                return queryset.filter(sesion__alumno=user)
+        
+        return Calificacion.objects.none() # Los usuarios no autenticados no ven nada
+
+    def perform_create(self, serializer):
+        # Al crear una calificación, si el usuario autenticado es un docente,
+        # asegúrate de que el campo 'docente' de la calificación sea el usuario actual.
+        # Si es un admin, el admin puede especificar cualquier docente.
+        if self.request.user.rol == 'docente':
+            serializer.save(docente=self.request.user)
+        else:
+            # Si es admin, el serializador ya habrá validado el 'docente' proporcionado
+            serializer.save()
 
 
 
@@ -535,9 +568,8 @@ class EmocionDetectionAPIView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
-        # Usa el serializador para validar los datos de entrada
         serializer = EmotionFrameSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True) # Lanza excepción si la validación falla
+        serializer.is_valid(raise_exception=True)
 
         sesion_id = serializer.validated_data['sesion_id']
         frame_base64 = serializer.validated_data['frame_base64']
@@ -546,56 +578,61 @@ class EmocionDetectionAPIView(APIView):
         try:
             sesion = SesionActividad.objects.get(id=sesion_id)
             
-            # --- Decodificación de la imagen para OpenCV ---
-            # Eliminar el prefijo 'data:image/jpeg;base64,' si existe
             if ',' in frame_base64:
                 _, frame_base64 = frame_base64.split(',', 1)
             
             image_bytes = base64.b64decode(frame_base64)
             np_array = np.frombuffer(image_bytes, np.uint8)
-            # cv2.IMREAD_COLOR para asegurar 3 canales (BGR) para MediaPipe
             imagen_cv2 = cv2.imdecode(np_array, cv2.IMREAD_COLOR) 
 
             if imagen_cv2 is None:
                 return Response({"error": "No se pudo decodificar la imagen Base64 o es inválida."}, status=status.HTTP_400_BAD_REQUEST)
 
-            # --- Llamada a tu función detectar_emocion ---
-            # Tu función detectar_emocion espera una imagen de OpenCV (numpy.ndarray)
+            # --- LLAMADA AL NUEVO detector.py ---
             emotion_results = detectar_emocion(imagen_cv2)
 
             # Preparar datos para AnalisisEmocion
             analisis_data = {
                 'sesion': sesion.id,
                 'momento_segundo': momento_segundo,
-                'emocion_predominante': None, # Valores por defecto si no hay detección
-                'confianza_emocion': 0.0,
-                'datos_raw_emociones': {}
+                'emocion_predominante': None, # Valor por defecto
+                'confianza_emocion': 0.0, # Valor por defecto
+                'datos_raw_emociones': {} # Valor por defecto
             }
 
-            if emotion_results: # Si detectar_emocion devolvió un diccionario (hubo detección)
-                analisis_data['emocion_predominante'] = emotion_results.get('emocion_predominante')
-                analisis_data['confianza_emocion'] = emotion_results.get('confianza_emocion')
-                analisis_data['datos_raw_emociones'] = emotion_results.get('datos_raw_emociones', {})
-            else:
-                print(f"DEBUG: No se detectó rostro o hubo un problema en detectar_emocion para sesion_id={sesion_id}, momento_segundo={momento_segundo}")
-                # Puedes ajustar el mensaje o el valor de emocion_predominante si quieres algo más explícito
-                # analisis_data['emocion_predominante'] = 'no_detectado' 
-            
+            if emotion_results and emotion_results.get('detected', False): # Si hubo detección exitosa
+                analisis_data['emocion_predominante'] = emotion_results.get('emotion')
+                analisis_data['confianza_emocion'] = emotion_results.get('confidence')
+                analisis_data['datos_raw_emociones'] = emotion_results.get('all_emotions', {})
+                print(f"DEBUG: Rostro detectado y emoción procesada para sesion_id={sesion_id}, momento_segundo={momento_segundo}")
+            else: # No hubo detección o hubo un error en el detector
+                # Podemos usar un valor específico para 'no_detectado' si tu modelo lo permite
+                # o simplemente mantener el valor por defecto de None/0.0
+                analisis_data['emocion_predominante'] = 'no_detectado' # Asigna un valor para "no detectado"
+                analisis_data['confianza_emocion'] = 0.0
+                analisis_data['datos_raw_emociones'] = emotion_results.get('all_emotions', {}) if emotion_results else {} # Intenta obtener all_emotions si result está presente
+                
+                # Mensaje de depuración más específico
+                if emotion_results:
+                    print(f"DEBUG: Detección fallida para sesion_id={sesion_id}, momento_segundo={momento_segundo}. Mensaje: {emotion_results.get('message', 'N/A')}, Error: {emotion_results.get('error', 'N/A')}")
+                else:
+                    print(f"DEBUG: detect_emotion retornó None inesperadamente para sesion_id={sesion_id}, momento_segundo={momento_segundo}")
+
+
             # Usar AnalisisEmocionWriteSerializer para guardar
             analisis_serializer = AnalisisEmocionWriteSerializer(data=analisis_data)
             if analisis_serializer.is_valid():
                 analisis_serializer.save()
                 
-                # Devolver la respuesta al frontend
                 response_data = {
                     "emocion": analisis_data['emocion_predominante'],
                     "confianza": analisis_data['confianza_emocion'],
                     "message": "Análisis de emoción registrado."
                 }
-                if not emotion_results:
+                if not (emotion_results and emotion_results.get('detected', False)):
                     response_data["message"] = "Frame recibido, pero no se detectó rostro o hubo un problema."
 
-                return Response(response_data, status=status.HTTP_201_CREATED) # 201 Created si se guarda un análisis
+                return Response(response_data, status=status.HTTP_201_CREATED)
             else:
                 print(f"ERROR: Errores de validación al guardar AnalisisEmocion: {analisis_serializer.errors}")
                 return Response(analisis_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -613,12 +650,12 @@ class TestEmotionDetectionView(APIView):
     parser_classes = [MultiPartParser] # Para recibir archivos (imágenes)
     # Temporalmente abierto para pruebas
     authentication_classes = [] 
-    permission_classes = [AllowAny]
+    permission_classes = [AllowAny] # Usamos [AllowAny] para ser explícitos.
 
     def post(self, request, *args, **kwargs):
         file = request.FILES.get('image')
         if not file:
-            return Response({'error': 'No image provided'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'No image provided', 'detected': False}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Leer imagen desde archivo
@@ -626,27 +663,60 @@ class TestEmotionDetectionView(APIView):
             image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
 
             if image is None:
-                return Response({'error': 'Could not decode image'}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': 'Could not decode image', 'detected': False}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Llama a detectar_emocion, que ahora devuelve un diccionario
+            # Llama a detectar_emocion, que ahora devuelve un diccionario con 'detected'
             emotion_results = detectar_emocion(image)
 
-            if emotion_results is None:
-                # Si no se detectó rostro o el modelo no está cargado
-                return Response({'message': 'No face detected or model not loaded'}, status=status.HTTP_200_OK)
-            
-            # Extrae los valores del diccionario
-            emocion = emotion_results.get('emocion_predominante')
-            confianza = emotion_results.get('confianza_emocion')
-            datos_raw = emotion_results.get('datos_raw_emociones') # Opcional, si quieres devolverlo también
+            if not emotion_results or not emotion_results.get('detected', False):
+                # Si no se detectó rostro, el modelo no está cargado o 'detected' es False
+                return Response({
+                    'detected': False,
+                    'message': emotion_results.get('message', 'No face detected or model not loaded') if emotion_results else 'Unknown detection error',
+                    'error': emotion_results.get('error') if emotion_results else 'No results from detector'
+                }, status=status.HTTP_200_OK) # Puedes devolver 200 OK si es un "no detectado" esperado
 
             # Devuelve la respuesta con los datos extraídos
             return Response({
-                'emocion': emocion,
-                'confianza': confianza,
-                'datos_raw_emociones': datos_raw # Si quieres que el frontend vea el desglose completo
+                'detected': True,
+                'emocion': emotion_results['emotion'],
+                'confianza': round(emotion_results['confidence'], 4), # Redondear para mejor visualización
+                'datos_raw_emociones': emotion_results['all_emotions'],
+                'face_box': emotion_results['face_box'] # Puedes incluir esto si es útil para el frontend de prueba
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
             # Captura cualquier error durante el procesamiento
-            return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {'error': f'Internal server error: {str(e)}', 'detected': False},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+
+# --- Nueva Vista para el Login ---
+class LoginView(APIView):
+    # No se requiere autenticación para acceder a esta vista (es la que la proporciona)
+    authentication_classes = []
+    permission_classes = [AllowAny] # Permite a cualquier usuario intentar loguearse
+
+    def post(self, request, *args, **kwargs):
+        username = request.data.get('username')
+        password = request.data.get('password')
+
+        user = authenticate(request, username=username, password=password)
+
+        if user is not None:
+            # Si el usuario es autenticado, puedes generar o recuperar un token
+            token, created = Token.objects.get_or_create(user=user)
+            return Response({
+                'token': token.key,
+                'user_id': user.pk,
+                'username': user.username,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'email': user.email,
+                'rol': user.rol,
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({"detail": "Unable to log in with provided credentials."}, status=status.HTTP_400_BAD_REQUEST)
