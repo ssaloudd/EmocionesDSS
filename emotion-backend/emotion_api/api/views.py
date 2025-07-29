@@ -1,5 +1,3 @@
-from django.shortcuts import render
-
 # Create your views here.
 
 from rest_framework.views import APIView
@@ -8,6 +6,8 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated, AllowAny # Importa permisos
+
+from .ml_model.detector import detectar_emocion
 
 from .models import (
     Usuario,
@@ -282,43 +282,47 @@ class EmocionDetectionAPIView(APIView):
 
 # Vista para probar la detección de emociones con una imagen subida
 class TestEmotionDetectionView(APIView):
-    parser_classes = [MultiPartParser] # Para recibir archivos (imágenes)
-    # Temporalmente abierto para pruebas
-    authentication_classes = [] 
-    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser]
+    authentication_classes = []
+    permission_classes = []
 
     def post(self, request, *args, **kwargs):
-        file = request.FILES.get('image')
-        if not file:
-            return Response({'error': 'No image provided'}, status=status.HTTP_400_BAD_REQUEST)
-
+        if 'image' not in request.FILES:
+            return Response(
+                {'error': 'No se proporcionó imagen', 'detected': False},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         try:
-            # Leer imagen desde archivo
-            image_bytes = np.asarray(bytearray(file.read()), dtype=np.uint8)
-            image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
-
-            if image is None:
-                return Response({'error': 'Could not decode image'}, status=status.HTTP_400_BAD_REQUEST)
-
-            # Llama a detectar_emocion, que ahora devuelve un diccionario
-            emotion_results = detectar_emocion(image)
-
-            if emotion_results is None:
-                # Si no se detectó rostro o el modelo no está cargado
-                return Response({'message': 'No face detected or model not loaded'}, status=status.HTTP_200_OK)
+            file = request.FILES['image']
+            img_array = np.frombuffer(file.read(), np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
             
-            # Extrae los valores del diccionario
-            emocion = emotion_results.get('emocion_predominante')
-            confianza = emotion_results.get('confianza_emocion')
-            datos_raw = emotion_results.get('datos_raw_emociones') # Opcional, si quieres devolverlo también
-
-            # Devuelve la respuesta con los datos extraídos
+            if img is None:
+                return Response(
+                    {'error': 'Imagen no válida', 'detected': False},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            result = detectar_emocion(img)
+            
+            if not result.get('detected', False):
+                return Response({
+                    'detected': False,
+                    'message': result.get('message', 'Detección fallida'),
+                    'error': result.get('error')
+                }, status=status.HTTP_200_OK)
+            
             return Response({
-                'emocion': emocion,
-                'confianza': confianza,
-                'datos_raw_emociones': datos_raw # Si quieres que el frontend vea el desglose completo
+                'detected': True,
+                'emotion': result['emotion'],
+                'confidence': round(result['confidence'], 4),
+                'all_emotions': result['all_emotions'],
+                'face_box': result['face_box']
             }, status=status.HTTP_200_OK)
-
+            
         except Exception as e:
-            # Captura cualquier error durante el procesamiento
-            return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {'error': f'Error interno: {str(e)}', 'detected': False},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

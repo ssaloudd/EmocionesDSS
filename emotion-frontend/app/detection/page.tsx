@@ -53,25 +53,23 @@ export default function DeteccionEmociones() {
         const response = await fetch('http://127.0.0.1:8000/api/test-detectar-emocion/', {
           method: 'POST',
           body: formData,
-          // No necesitas 'Content-Type': 'multipart/form-data' aquí,
-          // fetch lo establece automáticamente con FormData.
         });
 
-        const data = await response.json(); // La respuesta siempre será JSON
+        const data = await response.json();
 
-        if (response.ok) { // Si el status code es 2xx
-          if (data.emocion) { // Si se detectó una emoción
-            setEmocion(data.emocion);
-            setConfianza(data.confianza);
-          } else { // Si no se detectó rostro (status 200 con message)
+        if (response.ok) {
+          if (data.detected) {
+            setEmocion(data.emotion);
+            setConfianza(data.confidence);
+            // Opcional: usar data.face_box para dibujar rectángulo
+          } else {
             setEmocion('No detectado');
             setConfianza(null);
           }
-        } else { // Si el status code es un error (4xx, 5xx)
-          setEmocion('Error en la detección');
-          setConfianza(null);
-          setError(data.error || 'Error desconocido en la API.');
+        } else {
+          setError(data.error || 'Error en el servidor');
         }
+        
       } catch (err: any) {
         console.error("Error al conectar con la API:", err);
         setEmocion('Error de conexión');
