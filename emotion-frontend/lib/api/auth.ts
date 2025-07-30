@@ -6,7 +6,10 @@ export interface UserAuthData {
   username: string;
   email: string;
   rol: string;
-  // Puedes añadir más campos de user_data si los necesitas directamente en el estado de autenticación
+  first_name?: string; // Hacemos opcional por si no siempre viene o para compatibilidad
+  last_name?: string;  // Hacemos opcional
+  genero: string;
+  CI: string;
 }
 
 // Definir la interfaz para la respuesta completa del API de login de Django

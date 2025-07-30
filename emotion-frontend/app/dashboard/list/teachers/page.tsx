@@ -157,18 +157,16 @@ const TeacherListPage = () => {
       <td className="p-4">{item.CI}</td>
       <td>
         <div className="flex items-center gap-2">
-          {/* --- CONTROL DE VISIBILIDAD BASADO EN ROL: EDITAR Y ELIMINAR --- */}
           {hasRole('admin') && ( // Solo admins pueden editar y eliminar docentes
             <>
-              {/* Aquí especificamos los tipos genéricos para FormModal */}
               <FormModal<Usuario, CreateUpdateUsuarioPayload>
-                table="user" // Usamos 'user' para el UserForm genérico
+                table="teacher" // Usamos 'user' para el UserForm genérico
                 type="update"
                 data={item}
                 onSubmit={(formData) => handleFormSubmit('update', formData, item.id)}
               />
               <FormModal<Usuario, CreateUpdateUsuarioPayload>
-                table="user" // Usamos 'user' para el UserForm genérico
+                table="teacher" // Usamos 'user' para el UserForm genérico
                 type="delete"
                 id={item.id}
                 onConfirm={() => handleDelete(item.id)}
@@ -233,7 +231,7 @@ const TeacherListPage = () => {
             {/* --- CONTROL DE VISIBILIDAD BASADO EN ROL: CREAR --- */}
             {hasRole('admin') && ( // Solo admins pueden ver el botón de crear docente
               <FormModal<Usuario, CreateUpdateUsuarioPayload>
-                table="user" // Usamos 'user' para el UserForm genérico
+                table="teacher" // Usamos 'user' para el UserForm genérico
                 type="create"
                 onSubmit={(formData) => handleFormSubmit('create', formData)}
               />

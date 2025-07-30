@@ -56,31 +56,51 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsLoading(true);
     try {
       const data: LoginResponse = await apiLogin(username, password); // Llama a la función de API, usa LoginResponse
+      
+      // --- CAMBIO CLAVE AQUÍ: Extraer datos del usuario de 'data.user_data' ---
+      const userDataFromResponse: UserAuthData = {
+        id: data.user_id, // El ID del usuario principal
+        username: data.username, // El username principal
+        email: data.email, // El email principal
+        rol: data.rol, // El rol principal
+        first_name: data.user_data.first_name, // Extrae de user_data
+        last_name: data.user_data.last_name,   // Extrae de user_data
+        genero: data.user_data.genero,         // Extrae de user_data
+        CI: data.user_data.CI,                 // Extrae de user_data
+      };
+
       localStorage.setItem('authToken', data.token);
-      localStorage.setItem('userData', JSON.stringify({
-        id: data.user_id,
-        username: data.username,
-        email: data.email,
-        rol: data.rol,
-        // Aquí puedes guardar más datos si los necesitas, ej. data.user_data.first_name
-      } as UserAuthData)); // Castear a UserAuthData para asegurar consistencia
+      localStorage.setItem('userData', JSON.stringify(userDataFromResponse)); // Guarda el objeto completo del usuario
 
       setToken(data.token);
-      setUser({
-        id: data.user_id,
-        username: data.username,
-        email: data.email,
-        rol: data.rol,
-      });
+      setUser(userDataFromResponse);
       console.log("DEBUG Auth: Login exitoso y datos guardados.");
+
+      // --- LÓGICA DE REDIRECCIÓN BASADA EN ROL (se mantiene igual) ---
+      if (data.rol === 'admin') {
+        router.push('/dashboard/admin');
+      } else if (data.rol === 'docente') {
+        router.push('/dashboard/docente');
+      } else if (data.rol === 'alumno') {
+        router.push('/dashboard/alumno');
+      } else {
+        // Redirección por defecto si el rol no coincide o es desconocido
+        router.push('/dashboard'); 
+      }
+
       // No redirigir aquí, dejar que la página de login lo haga
     } catch (error) {
       console.error("DEBUG Auth: Error durante el login:", error);
+      // Puedes mostrar un mensaje de error al usuario aquí
+      alert(`Error: ${(error as Error).message || "Unable to log in with provided credentials."}`);
+      setUser(null);
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('userData');
       throw error; // Re-lanzar el error para que el componente de login lo maneje
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [router]);
 
   // Función de logout
   const logout = useCallback(async () => {

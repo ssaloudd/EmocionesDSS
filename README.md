@@ -91,8 +91,7 @@ bun dev
 
 
 ### :star2: **Ejecución**
-- Para acceder al panel de administrador, se ingresa en el navegador:
-http://localhost:3000/dashboard/admin
+- Para acceder al panel de administrador, se ingresa en el navegador a http://localhost:3000/login con las credenciales que se asignaron a `admin`
 
-- Para probar el modelo de detección de emociones:
-http://localhost:3000/detection
+
+- Para probar el modelo de detección de emociones: http://localhost:3000/detection

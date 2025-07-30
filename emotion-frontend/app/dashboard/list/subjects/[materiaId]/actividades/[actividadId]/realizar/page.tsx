@@ -94,7 +94,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
   }, [sesionActividad, sessionEnded, cameraStream]);
 
   // useEffect para limpiar intervalos y stream al desmontar o al finalizar la sesión
-  useEffect(() => {
+  /*useEffect(() => {
     return () => {
       console.log("DEBUG: Cleanup effect ejecutado.");
       if (intervalRef.current) {
@@ -110,7 +110,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
         setCameraStream(null);
       }
     };
-  }, [cameraStream]); // Depende de cameraStream para asegurar que se detenga si cambia o se desmonta
+  }, [cameraStream]); // Depende de cameraStream para asegurar que se detenga si cambia o se desmonta*/
 
   // useEffect 1: Cargar detalles de la actividad y controlar acceso
   useEffect(() => {
@@ -211,7 +211,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
         console.log("DEBUG: Cámara detenida en cleanup del useEffect.");
       }
     };
-  }, [videoRef.current, cameraStream, sessionEnded, isAuthenticated, loadingPage]); // Dependencias
+  }, [videoRef.current, cameraStream, sessionEnded]); // Dependencias
 
   // useEffect 3: Iniciar SesionActividad y Análisis de Emoción una vez que todo esté listo
   useEffect(() => {
@@ -401,7 +401,6 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
         Duración de Análisis: {actividad.duracion_analisis_minutos} minutos
       </p>
 
-      {/* Mensaje si no se pudo acceder a la cámara */}
       {!cameraStream && (
         <p className="text-red-500 mb-4">
           No es posible el acceso a la cámara. Asegúrate de dar permisos.
@@ -415,8 +414,7 @@ const RealizarActividadPage: React.FC<RealizarActividadPageProps> = () => {
           playsInline
           className="w-full h-full object-cover"
         />
-        {/* Mostrar emoción solo si el usuario es alumno y la sesión está activa */}
-        {hasRole('alumno') && sessionStarted && !sessionEnded && (
+        {hasRole('alumno') && (
           <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
             Emoción: {currentEmotion || "Detectando..."}
             {currentEmotion &&
