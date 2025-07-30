@@ -8,14 +8,19 @@ import {
   CursoDocente,
   BulkAssignmentPayload,
 } from "@/lib/api/curso_docentes";
+import { getUsers, Usuario } from "@/lib/api/users"; // Para obtener docentes disponibles en el modal
+import { getSubjects, Materia } from "@/lib/api/subjects"; // Para obtener materias disponibles en el modal
 
 import FormModal from "@/components/FormModal";
 import Table from "@/components/Table";
 import TableSearch from "@/components/TableSearch";
 
-const role = "admin"; // Simulación del rol para desarrollo
+// --- IMPORTACIÓN CLAVE: El hook useAuth ---
+import { useAuth } from '@/lib/context/AuthContext';
+import { useRouter } from 'next/navigation'; // Para redirigir
 
 import Image from "next/image";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faChalkboard } from "@fortawesome/free-solid-svg-icons"; // Icono para asignaciones
 
 // Definición de las columnas para la tabla de asignaciones
@@ -28,30 +33,97 @@ const columns = [
 ];
 
 const CourseAssignmentsListPage = () => {
+  // --- USO CLAVE: Obtener el estado de autenticación del contexto ---
+  const { user, isAuthenticated, isLoading, hasRole, logout } = useAuth();
+  const router = useRouter(); // Instancia del router para redirecciones
+
   const [allAssignments, setAllAssignments] = useState<CursoDocente[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Estado de carga para los datos de la tabla
   const [error, setError] = useState<string | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
+  // Estados para el modal de asignación masiva
+  const [isBulkAssignModalOpen, setIsBulkAssignModalOpen] = useState(false);
+  const [availableDocentes, setAvailableDocentes] = useState<Usuario[]>([]);
+  const [availableMaterias, setAvailableMaterias] = useState<Materia[]>([]);
+
+
+  // --- LÓGICA CLAVE: Redirección y control de acceso ---
+  useEffect(() => {
+    if (isLoading) {
+      // Si aún estamos cargando el estado de autenticación, no hacemos nada
+      return;
+    }
+    if (!isAuthenticated) {
+      // Si no está autenticado, redirigir a la página de login
+      console.log("DEBUG: Usuario no autenticado, redirigiendo a /login");
+      router.push('/login');
+      return;
+    }
+    // Para esta página, todos los roles autenticados pueden verla (pero con datos filtrados)
+    // Si quisieras restringirla a solo admin/docente, añadirías:
+    // if (!hasRole(['admin', 'docente'])) {
+    //   router.push('/dashboard'); // O a una página de "acceso denegado"
+    //   return;
+    // }
+  }, [isLoading, isAuthenticated, router]); // hasRole no es una dependencia aquí si todos los autenticados pueden acceder
+
+
   const fetchAllAssignments = useCallback(async () => {
-    setLoading(true);
+    // Solo intentar cargar asignaciones si el usuario está autenticado
+    if (!isAuthenticated || isLoading) {
+      return;
+    }
+
+    setLoading(true); // Iniciar carga de datos de la tabla
     setError(null);
     try {
+      // getCursoDocentes() ya filtra por rol en el backend
       const data = await getCursoDocentes();
       setAllAssignments(data);
     } catch (err: any) {
       console.error("Error al cargar asignaciones:", err);
-      setError(err.message || "Error desconocido al cargar asignaciones.");
+      // Si el error es un 403 (Forbidden) o 401 (Unauthorized), podría significar que el usuario no tiene permiso
+      if (err.message.includes('403') || err.message.includes('Forbidden') || err.message.includes('401') || err.message.includes('Unauthorized')) {
+        setError("Acceso denegado. No tienes permiso para ver estas asignaciones.");
+      } else {
+        setError(err.message || "Error desconocido al cargar asignaciones.");
+      }
     } finally {
-      setLoading(false);
+      setLoading(false); // Finalizar carga de datos de la tabla
     }
-  }, []);
+  }, [isAuthenticated, isLoading]); // Depende de isAuthenticated y isLoading
+
+
+  const fetchAvailableDataForModal = useCallback(async () => {
+    // Solo cargar datos para el modal si el usuario es admin (quien puede hacer asignación masiva)
+    if (!hasRole('admin')) {
+      return;
+    }
+    try {
+      const docentes = await getUsers({ rol: 'docente' });
+      setAvailableDocentes(docentes);
+      const materias = await getSubjects();
+      setAvailableMaterias(materias);
+    } catch (err: any) {
+      console.error("Error al cargar datos para asignación masiva:", err);
+      // No establecer error global, solo para el modal si fuera necesario
+    }
+  }, [hasRole]);
+
 
   useEffect(() => {
-    fetchAllAssignments();
-  }, [fetchAllAssignments]);
+    // Cargar asignaciones al montar o cuando el estado de autenticación cambie
+    if (isAuthenticated && !isLoading) {
+      fetchAllAssignments();
+    }
+    // Cargar datos para el modal solo si el usuario es admin
+    if (isAuthenticated && !isLoading && hasRole('admin')) {
+      fetchAvailableDataForModal();
+    }
+  }, [isAuthenticated, isLoading, fetchAllAssignments, hasRole, fetchAvailableDataForModal]); // Dependencias
 
   const paginatedAssignments = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -64,20 +136,30 @@ const CourseAssignmentsListPage = () => {
   }, [allAssignments.length, itemsPerPage]);
 
   const handleDelete = async (id: number) => {
-    if (confirm("¿Estás seguro de que quieres eliminar esta asignación?")) {
-      try {
-        await deleteCursoDocente(id);
-        fetchAllAssignments();
-        alert("Asignación eliminada exitosamente!");
-      } catch (err: any) {
-        console.error("Error al eliminar asignación:", err);
-        alert(`Error al eliminar asignación: ${err.message}`);
-      }
+    // Solo permitir eliminar si el usuario es admin
+    if (!hasRole('admin')) {
+      alert("No tienes permiso para eliminar asignaciones.");
+      return;
+    }
+    if (!confirm("¿Estás seguro de que quieres eliminar esta asignación?")) return;
+
+    try {
+      await deleteCursoDocente(id);
+      fetchAllAssignments();
+      alert("Asignación eliminada exitosamente!");
+    } catch (err: any) {
+      console.error("Error al eliminar asignación:", err);
+      alert(`Error al eliminar asignación: ${err.message}`);
     }
   };
 
   // Función para manejar la asignación masiva
   const handleBulkAssignmentSubmit = async (formData: BulkAssignmentPayload) => {
+    // Solo permitir asignación masiva si el usuario es admin
+    if (!hasRole('admin')) {
+      alert("No tienes permiso para realizar asignaciones masivas.");
+      return;
+    }
     try {
       const response = await bulkAssignTeachers(formData);
       fetchAllAssignments(); // Refresca la lista completa
@@ -87,6 +169,7 @@ const CourseAssignmentsListPage = () => {
         alert(`Asignación masiva completada: ${response.created_count} nuevas asignaciones.`);
       }
       setCurrentPage(1);
+      setIsBulkAssignModalOpen(false); // Cerrar el modal después de la operación
     } catch (err: any) {
       console.error("Error en asignación masiva:", err);
       alert(`Error en asignación masiva: ${err.message}`);
@@ -99,22 +182,18 @@ const CourseAssignmentsListPage = () => {
       className="border-b border-gray-200 even:bg-slate-50 text-sm hover:bg-lamaPurpleLight"
     >
       <td className="p-4">{item.id}</td>
-      {/* Accede a los nombres de docente y materia a través de los objetos anidados */}
       <td className="p-4">{item.docente ? `${item.docente.first_name} ${item.docente.last_name}` : 'N/A'}</td>
       <td className="p-4">{item.materia ? item.materia.nombre : 'N/A'}</td>
       <td className="p-4">{item.materia?.nivel ? item.materia.nivel.nombre : 'N/A'}</td>
       <td>
         <div className="flex items-center gap-2">
-          {role === "admin" && (
-            <>
-              {/* Para asignaciones, la edición individual no es común, solo eliminación */}
-              <FormModal<CursoDocente, BulkAssignmentPayload> // Tipos genéricos
-                table="course-assignment" // Nombre de la tabla para el formulario
-                type="delete"
-                id={item.id}
-                onConfirm={() => handleDelete(item.id)}
-              />
-            </>
+          {hasRole('admin') && ( // Solo admins pueden eliminar asignaciones
+            <FormModal<CursoDocente, BulkAssignmentPayload> // Tipos genéricos
+              table="course-assignment" // Nombre de la tabla para el formulario
+              type="delete"
+              id={item.id}
+              onConfirm={() => handleDelete(item.id)}
+            />
           )}
         </div>
       </td>
@@ -127,13 +206,22 @@ const CourseAssignmentsListPage = () => {
     }
   };
 
-  if (loading) {
+  // --- Renderizado condicional basado en el estado de autenticación y carga ---
+  if (isLoading) {
     return (
       <div className="bg-white p-4 rounded-md flex-1 m-4 mt-0 text-center">
-        Cargando asignaciones...
+        Cargando autenticación...
       </div>
     );
   }
+
+  if (!isAuthenticated) {
+    return null; // Ya se redirigió a /login
+  }
+
+  // Si el usuario está autenticado pero no tiene un rol permitido para ver la página,
+  // aunque el backend filtre, es mejor redirigir si la página completa no es relevante.
+  // Según tu requisito, docentes y alumnos pueden ver sus asignaciones, así que no hay redirección aquí.
 
   if (error) {
     return (
@@ -157,7 +245,7 @@ const CourseAssignmentsListPage = () => {
             <button className="w-8 h-8 flex items-center justify-center rounded-full bg-lamaYellow">
               <Image src="/sort.png" alt="Sort" width={14} height={14} />
             </button>
-            {role === "admin" && (
+            {hasRole('admin') && ( // Solo admins pueden ver el botón de asignación masiva
               <FormModal<any, BulkAssignmentPayload> // Para creación masiva, data no es relevante
                 table="course-assignment" // Nombre de la tabla para el formulario
                 type="create"

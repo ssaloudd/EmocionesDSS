@@ -1,6 +1,5 @@
-const API_URL = "http://localhost:8000/api";
-
-import { Materia } from './subjects'; // Para el objeto Materia anidado
+import { authenticatedFetch } from './authenticated-api'; // Import the new authenticated fetch utility
+import { Materia } from './subjects'; // For the nested Materia object
 
 // Interfaz para la lectura de Actividad
 export interface Actividad {
@@ -27,15 +26,12 @@ export interface CreateUpdateActividadPayload {
  * @returns Una promesa que resuelve a un array de objetos Actividad.
  */
 export async function getActivities(materiaId?: number): Promise<Actividad[]> {
-  let url = `${API_URL}/actividades/`;
+  let endpoint = '/api/actividades/';
   if (materiaId) {
-    url += `?materia=${materiaId}`;
+    endpoint += `?materia=${materiaId}`;
   }
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Error al obtener actividades: ${res.statusText}`);
-  }
-  return res.json();
+  // Usa authenticatedFetch para incluir el token y manejar la URL base
+  return authenticatedFetch<Actividad[]>(endpoint);
 }
 
 /**
@@ -44,16 +40,12 @@ export async function getActivities(materiaId?: number): Promise<Actividad[]> {
  * @returns Una promesa que resuelve a la nueva Actividad creada.
  */
 export async function createActivity(payload: CreateUpdateActividadPayload): Promise<Actividad> {
-  const res = await fetch(`${API_URL}/actividades/`, {
+  // Usa authenticatedFetch para incluir el token y manejar la URL base
+  return authenticatedFetch<Actividad>('/api/actividades/', {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // authenticatedFetch ya establece 'Content-Type': 'application/json' por defecto
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(`Error al crear actividad: ${res.statusText} - ${JSON.stringify(errorData)}`);
-  }
-  return res.json();
 }
 
 /**
@@ -63,16 +55,12 @@ export async function createActivity(payload: CreateUpdateActividadPayload): Pro
  * @returns Una promesa que resuelve a la Actividad actualizada.
  */
 export async function updateActivity(id: number, payload: CreateUpdateActividadPayload): Promise<Actividad> {
-  const res = await fetch(`${API_URL}/actividades/${id}/`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
+  // Usa authenticatedFetch para incluir el token y manejar la URL base
+  return authenticatedFetch<Actividad>(`/api/actividades/${id}/`, {
+    method: "PUT", // O "PATCH" para actualización parcial
+    // authenticatedFetch ya establece 'Content-Type': 'application/json' por defecto
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(`Error al actualizar actividad: ${res.statusText} - ${JSON.stringify(errorData)}`);
-  }
-  return res.json();
 }
 
 /**
@@ -81,11 +69,9 @@ export async function updateActivity(id: number, payload: CreateUpdateActividadP
  * @returns Una promesa que resuelve a true si la eliminación fue exitosa.
  */
 export async function deleteActivity(id: number): Promise<boolean> {
-  const res = await fetch(`${API_URL}/actividades/${id}/`, {
+  // Usa authenticatedFetch para incluir el token y manejar la URL base
+  await authenticatedFetch<void>(`/api/actividades/${id}/`, { // authenticatedFetch devuelve Promise<T>
     method: "DELETE",
   });
-  if (!res.ok) {
-    throw new Error(`Error al eliminar actividad: ${res.statusText}`);
-  }
-  return res.ok;
+  return true; // Si authenticatedFetch no lanzó un error, la eliminación fue exitosa
 }

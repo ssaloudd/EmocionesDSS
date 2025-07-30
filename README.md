@@ -54,9 +54,27 @@ Aún dentro del directorio `EmocionesDSS/emotion-backend/emotion_api` se puede c
 ```
 python manage.py createsuperuser
 ```
-Llenar con los datos pedidos en consola (para desarrollo solo poner como `Username: admin`, `Email address: admin@admin.com` y `Password: admin`)
+Llenar con los datos pedidos en consola (para desarrollo solo poner como `Username: admin`, `Email address: admin@admin.com` y `Password: admin`).
+Posteriormente, se procede a ejecutar:
+```
+cd EmocionesDSS\emotion-backend\emotion_api
+python manage.py shell
+from api.models import Usuario
+admin_user = Usuario.objects.get(username='admin') 
+admin_user.rol = 'admin'
+admin_user.save()
 
-###     5. Ejecutar servidor
+print(f"Usuario {admin_user.username} actualizado. Nuevo rol: {admin_user.rol}")
+exit()
+```
+
+###     5. Entorno local
+En la carpeta `emotion-frontend` se debe crear un archivo `.env.local` en la cual debe hallarse la siguiente información:
+```
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+```
+
+###     6. Ejecutar servidor
 Con el entorno virtual activo y en la ruta `EmocionesDSS/emotion-backend/emotion_api`:
 ```
 python manage.py runserver
@@ -73,8 +91,7 @@ bun dev
 
 
 ### :star2: **Ejecución**
-- Para acceder al panel de administrador, se ingresa en el navegador:
-http://localhost:3000/dashboard/admin
+- Para acceder al panel de administrador, se ingresa en el navegador a http://localhost:3000/login con las credenciales que se asignaron a `admin`
 
-- Para probar el modelo de detección de emociones:
-http://localhost:3000/detection
+
+- Para probar el modelo de detección de emociones: http://localhost:3000/detection

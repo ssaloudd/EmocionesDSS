@@ -18,7 +18,9 @@ import Pagination from "@/components/Pagination";
 import Table from "@/components/Table";
 import TableSearch from "@/components/TableSearch";
 
-const role = "admin"; // Simulación del rol para desarrollo
+// --- IMPORTACIÓN CLAVE: El hook useAuth ---
+import { useAuth } from '@/lib/context/AuthContext';
+import { useRouter } from 'next/navigation'; // Para redirigir
 
 import Image from "next/image";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -35,21 +37,40 @@ const columns = [
 ];
 
 interface ActivitiesPageProps {
-  // CAMBIO CLAVE AQUÍ: Ahora espera 'materiaId' en lugar de 'id'
   params: { materiaId: string }; 
 }
 
 const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
   const params = useParams();
-  // CAMBIO CLAVE AQUÍ: Accede a 'params.materiaId'
   const materiaId = params.materiaId ? parseInt(params.materiaId as string) : null; 
 
+  // --- USO CLAVE: Obtener el estado de autenticación del contexto ---
+  const { user, isAuthenticated, isLoading, hasRole, logout } = useAuth();
+  const router = useRouter(); // Instancia del router para redirecciones
+
   const [allActivities, setAllActivities] = useState<Actividad[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Estado de carga para los datos de la tabla
   const [error, setError] = useState<string | null>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+  // --- LÓGICA CLAVE: Redirección y control de acceso ---
+  useEffect(() => {
+    if (isLoading) {
+      // Si aún estamos cargando el estado de autenticación, no hacemos nada
+      return;
+    }
+    if (!isAuthenticated) {
+      // Si no está autenticado, redirigir a la página de login
+      console.log("DEBUG: Usuario no autenticado, redirigiendo a /login");
+      router.push('/login');
+      return;
+    }
+    // No hay una redirección estricta por rol aquí, ya que todos los roles autenticados
+    // pueden ver esta página (aunque con datos filtrados por el backend).
+  }, [isLoading, isAuthenticated, router]);
+
 
   const fetchAllActivities = useCallback(async () => {
     if (!materiaId) {
@@ -57,22 +78,36 @@ const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    // Solo intentar cargar actividades si el usuario está autenticado
+    if (!isAuthenticated || isLoading) {
+      return;
+    }
+
+    setLoading(true); // Iniciar carga de datos de la tabla
     setError(null);
     try {
-      const data = await getActivities(materiaId); // Filtra por materiaId
+      // getActivities(materiaId) ya filtra por rol en el backend
+      const data = await getActivities(materiaId); 
       setAllActivities(data);
     } catch (err: any) {
       console.error("Error al cargar actividades:", err);
-      setError(err.message || "Error desconocido al cargar actividades.");
+      // Si el error es un 403 (Forbidden) o 401 (Unauthorized), podría significar que el usuario no tiene permiso
+      if (err.message.includes('403') || err.message.includes('Forbidden') || err.message.includes('401') || err.message.includes('Unauthorized')) {
+        setError("Acceso denegado. No tienes permiso para ver estas actividades.");
+      } else {
+        setError(err.message || "Error desconocido al cargar actividades.");
+      }
     } finally {
-      setLoading(false);
+      setLoading(false); // Finalizar carga de datos de la tabla
     }
-  }, [materiaId]); // Depende de materiaId
+  }, [materiaId, isAuthenticated, isLoading]); // Depende de materiaId, isAuthenticated, isLoading
 
   useEffect(() => {
-    fetchAllActivities();
-  }, [fetchAllActivities]);
+    // Solo cargar actividades si el usuario está autenticado y no está en carga inicial
+    if (isAuthenticated && !isLoading) {
+      fetchAllActivities();
+    }
+  }, [isAuthenticated, isLoading, fetchAllActivities]); // Dependencias
 
   const paginatedActivities = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -85,19 +120,29 @@ const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
   }, [allActivities.length, itemsPerPage]);
 
   const handleDelete = async (id: number) => {
-    if (confirm("¿Estás seguro de que quieres eliminar esta actividad?")) {
-      try {
-        await deleteActivity(id);
-        fetchAllActivities();
-        alert("Actividad eliminada exitosamente!");
-      } catch (err: any) {
-        console.error("Error al eliminar actividad:", err);
-        alert(`Error al eliminar actividad: ${err.message}`);
-      }
+    // Solo permitir eliminar si el usuario es admin o docente
+    if (!hasRole(['admin', 'docente'])) {
+      alert("No tienes permiso para eliminar actividades.");
+      return;
+    }
+    if (!confirm("¿Estás seguro de que quieres eliminar esta actividad?")) return;
+
+    try {
+      await deleteActivity(id);
+      fetchAllActivities();
+      alert("Actividad eliminada exitosamente!");
+    } catch (err: any) {
+      console.error("Error al eliminar actividad:", err);
+      alert(`Error al eliminar actividad: ${err.message}`);
     }
   };
 
   const handleFormSubmit = async (type: 'create' | 'update', formData: CreateUpdateActividadPayload, id?: number) => {
+    // Solo permitir crear/actualizar si el usuario es admin o docente
+    if (!hasRole(['admin', 'docente'])) {
+      alert("No tienes permiso para crear o actualizar actividades.");
+      return;
+    }
     if (!materiaId) {
       alert("No se puede crear/actualizar actividad sin un ID de materia.");
       return;
@@ -133,23 +178,26 @@ const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
       <td className="p-4">{item.duracion_analisis_minutos}</td>
       <td>
         <div className="flex items-center gap-2">
+          {/* El botón "Realizar Actividad" es visible para todos los roles autenticados */}
           <Link href={`/dashboard/list/subjects/${materiaId}/actividades/${item.id}/realizar`} passHref>
             <button className="w-7 h-7 flex items-center justify-center rounded-full bg-blue-500 text-white hover:bg-blue-600 transition-colors">
               <FontAwesomeIcon icon={faPlayCircle} size="sm" />
             </button>
           </Link>
 
-          {(role === "admin" || role === "docente") && (
+          {/* --- CONTROL DE VISIBILIDAD BASADO EN ROL: EDITAR Y ELIMINAR --- */}
+          {hasRole(['admin', 'docente']) && ( // Solo admins y docentes pueden editar y eliminar actividades
             <>
               <FormModal<Actividad, CreateUpdateActividadPayload>
-                table="activity"
+                table="activity" // Asegúrate de que tu FormModal pueda manejar 'activity'
                 type="update"
                 data={item}
-                materiaId={materiaId || 0} // Asegurarse de pasar el materiaId
+                // materiaId es necesario para el formulario de actividad si lo usas para preseleccionar
+                materiaId={materiaId || undefined} 
                 onSubmit={(formData) => handleFormSubmit('update', formData, item.id)}
               />
               <FormModal<Actividad, CreateUpdateActividadPayload>
-                table="activity"
+                table="activity" // Asegúrate de que tu FormModal pueda manejar 'activity'
                 type="delete"
                 id={item.id}
                 onConfirm={() => handleDelete(item.id)}
@@ -162,7 +210,7 @@ const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
   );
 
   const handlePageChange = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
+    if (page >= 1 && page >= 1 && page <= totalPages) {
       setCurrentPage(page);
     }
   };
@@ -175,13 +223,21 @@ const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
     );
   }
 
-  if (loading) {
+  // --- Renderizado condicional basado en el estado de autenticación y carga ---
+  if (isLoading) {
     return (
       <div className="bg-white p-4 rounded-md flex-1 m-4 mt-0 text-center">
-        Cargando actividades...
+        Cargando autenticación...
       </div>
     );
   }
+
+  if (!isAuthenticated) {
+    return null; // Ya se redirigió a /login
+  }
+
+  // No hay una redirección estricta por rol aquí, ya que todos los roles autenticados
+  // pueden ver esta página (aunque con datos filtrados por el backend).
 
   if (error) {
     return (
@@ -204,11 +260,12 @@ const SubjectActivitiesListPage: React.FC<ActivitiesPageProps> = () => {
             <button className="w-8 h-8 flex items-center justify-center rounded-full bg-lamaYellow">
               <Image src="/sort.png" alt="Sort" width={14} height={14} />
             </button>
-            {(role === "admin" || role === "docente") && (
+            {/* --- CONTROL DE VISIBILIDAD BASADO EN ROL: CREAR --- */}
+            {hasRole(['admin', 'docente']) && ( // Solo admins y docentes pueden ver el botón de crear actividad
               <FormModal<Actividad, CreateUpdateActividadPayload>
-                table="activity"
+                table="activity" // Asegúrate de que tu FormModal pueda manejar 'activity'
                 type="create"
-                materiaId={materiaId} // Pasa el ID de la materia al formulario de creación
+                materiaId={materiaId || undefined} // Pasa el ID de la materia al formulario de creación
                 onSubmit={(formData) => handleFormSubmit('create', formData)}
               />
             )}

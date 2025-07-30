@@ -1,11 +1,10 @@
-// Update the import path if 'lib/data.ts' is located elsewhere, e.g.:
-import { role } from "../lib/data";
-// Or create 'lib/data.ts' with the following content if it does not exist:
-// export const role = "admin"; // or dynamically set based on your app logic
+"use client"; // Este componente debe ser de cliente para usar el hook useAuth
+
 import Image from "next/image";
 import Link from "next/link";
-import { title } from "process";
+import { useAuth } from '@/lib/context/AuthContext'; // Importa el hook de autenticación
 
+// Define los elementos del menú con sus roles de visibilidad
 const menuItems = [
   {
     title: "MENU GENERAL",
@@ -13,82 +12,39 @@ const menuItems = [
       {
         icon: "/home.png",
         label: "Home",
-        href: "/dashboard/admin",
-        visible: ["admin"],
+        href: "/dashboard/admin", // Podrías redirigir a /dashboard/alumno o /dashboard/docente según el rol
+        visible: ["admin", "docente", "alumno"], // Todos pueden ver su home, pero la ruta puede variar
       },
       {
         icon: "/nivel.png",
         label: "Niveles",
         href: "/dashboard/list/niveles/",
-        visible: ["admin", "teacher"],
+        visible: ["admin"],
       },
       {
         icon: "/materias.png",
         label: "Materias",
         href: "/dashboard/list/subjects/",
-        visible: ["admin", "teacher", "student"],
+        visible: ["admin", "docente", "alumno"],
+      },
+      {
+        icon: "/result.png",
+        label: "Calificaciones",
+        href: "/dashboard/list/calificaciones/",
+        visible: ["admin", "docente", "alumno"],
       },
       {
         icon: "/teacher.png",
         label: "Docentes",
         href: "/dashboard/list/teachers",
-        visible: ["admin", "teacher"],
+        visible: ["admin"], // Solo administradores pueden listar docentes
       },
       {
         icon: "/student.png",
         label: "Alumnos",
         href: "/dashboard/list/students",
-        visible: ["admin", "teacher"],
+        visible: ["admin"], // Solo administradores pueden listar alumnos
       },
-
-      /*{
-        icon: "/lesson.png",
-        label: "Lecciones",
-        href: "/list/lessons",
-        visible: ["admin", "teacher"],
-      },
-      {
-        icon: "/exam.png",
-        label: "Exámenes",
-        href: "/list/exams",
-        visible: ["admin", "teacher", "alumno"],
-      },
-      /*{
-        icon: "/assignment.png",
-        label: "Assignments",
-        href: "/list/assignments",
-        visible: ["admin", "teacher", "alumno"],
-      },*/
-      /*{
-        icon: "/result.png",
-        label: "Resultados",
-        href: "/list/results",
-        visible: ["admin", "teacher", "alumno"],
-      },*/
-      /*{
-        icon: "/attendance.png",
-        label: "Attendance",
-        href: "/list/attendance",
-        visible: ["admin", "teacher", "student", "parent"],
-      },*/
-      /*{
-        icon: "/calendar.png",
-        label: "Events",
-        href: "/list/events",
-        visible: ["admin", "teacher", "alumno"],
-      },*/
-      /*{
-        icon: "/message.png",
-        label: "Messages",
-        href: "/list/messages",
-        visible: ["admin", "teacher", "student", "parent"],
-      },
-      {
-        icon: "/announcement.png",
-        label: "Announcements",
-        href: "/list/announcements",
-        visible: ["admin", "teacher", "student", "parent"],
-      },*/
     ],
   },
   {
@@ -96,56 +52,74 @@ const menuItems = [
     items: [
       {
         icon: "/claseDoc.png",
-        label: "Cursos de Docentes",
+        label: "Asignaciones de Docentes", // Nombre más claro
         href: "/dashboard/list/course-assignments",
-        visible: ["admin", "teacher"],
+        visible: ["admin", "docente", "alumno"],
       },
       {
         icon: "/claseAlu.png",
-        label: "Cursos de Alumnos",
+        label: "Inscripciones de Alumnos", // Nombre más claro
         href: "/dashboard/list/course-enrollments",
-        visible: ["admin", "teacher"],
+        visible: ["admin", "docente", "alumno"],
       },
     ],
   },
   {
     title: "OTROS",
     items: [
-      /*{
-        icon: "/profile.png",
-        label: "Profile",
-        href: "/profile",
-        visible: ["admin", "teacher", "student"],
-      },
-      {
-        icon: "/setting.png",
-        label: "Settings",
-        href: "/settings",
-        visible: ["admin", "teacher", "student", "parent"],
-      },*/
       {
         icon: "/logout.png",
-        label: "Logout",
-        href: "/logout",
-        visible: ["admin", "teacher", "student"],
+        label: "Cerrar Sesión", // Nombre más claro
+        href: "/logout", // Esta ruta debería manejar el logout
+        visible: ["admin", "docente", "alumno"],
       },
     ],
   },
 ];
 
 const Menu = () => {
+  const { user, isAuthenticated, isLoading } = useAuth(); // Obtiene el usuario y su estado de autenticación
+
+  if (isLoading) {
+    return (
+      <div className="mt-4 text-sm text-center text-gray-500">
+        Cargando menú...
+      </div>
+    );
+  }
+
+  // Si no está autenticado, no muestra el menú (la redirección ya la maneja AuthContext)
+  if (!isAuthenticated || !user) {
+    return null; 
+  }
+
+  const currentUserRole = user.rol; // Obtiene el rol del usuario logueado
+
   return (
     <div className="mt-4 text-sm">
-      {menuItems.map((i) => (
-        <div className="flex flex-col gap-2" key={i.title}>
+      {menuItems.map((category) => (
+        <div className="flex flex-col gap-2" key={category.title}>
           <span className="hidden lg:block text-gray-400 font-light my-4">
-            {i.title}
+            {category.title}
           </span>
-          {i.items.map((item) => {
-            if (item.visible.includes(role)) {
+          {category.items.map((item) => {
+            // Verifica si el rol del usuario actual está incluido en los roles visibles para este ítem
+            if (item.visible.includes(currentUserRole)) {
+              // Lógica especial para el "Home" para redirigir según el rol
+              let itemHref = item.href;
+              if (item.label === "Home") {
+                if (currentUserRole === 'admin') {
+                  itemHref = "/dashboard/admin";
+                } else if (currentUserRole === 'docente') {
+                  itemHref = "/dashboard/docente";
+                } else if (currentUserRole === 'alumno') {
+                  itemHref = "/dashboard/alumno";
+                }
+              }
+
               return (
                 <Link
-                  href={item.href}
+                  href={itemHref}
                   key={item.label}
                   className="flex items-center justify-center lg:justify-start gap-4 text-gray-500 py-2 md:px-2 rounded-md hover:bg-lamaSkyLight"
                 >
@@ -154,6 +128,7 @@ const Menu = () => {
                 </Link>
               );
             }
+            return null; // No renderiza el ítem si el rol no es visible
           })}
         </div>
       ))}

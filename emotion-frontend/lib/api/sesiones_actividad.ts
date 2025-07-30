@@ -1,5 +1,7 @@
-const API_URL = "http://localhost:8000/api";
+// lib/api/sesiones_actividad.ts
 
+// No es necesario definir API_URL aquí si authenticatedFetch ya lo usa internamente
+import { authenticatedFetch } from './authenticated-api'; // Importa la utilidad de fetch autenticado
 import { Actividad } from './actividades'; // Para el objeto Actividad anidado
 import { Usuario } from './users';     // Para el objeto Usuario anidado
 
@@ -24,12 +26,19 @@ export interface CreateSesionActividadPayload {
  * @returns Una promesa que resuelve a un objeto SesionActividad.
  */
 export async function getSesionActividad(id: number): Promise<SesionActividad> {
-  const res = await fetch(`${API_URL}/sesiones-actividad/${id}/`);
-  if (!res.ok) {
-    throw new Error(`Error al obtener sesión de actividad: ${res.statusText}`);
-  }
-  return res.json();
+  // CAMBIO CLAVE AQUÍ: Solo la ruta relativa
+  return authenticatedFetch<SesionActividad>(`/api/sesiones-actividad/${id}/`);
 }
+
+/**
+ * Obtiene TODAS las sesiones de actividad.
+ * @returns Una promesa que resuelve a un array de objetos SesionActividad.
+ */
+export async function getAllSesionesActividad(): Promise<SesionActividad[]> {
+  // CAMBIO CLAVE AQUÍ: Solo la ruta relativa
+  return authenticatedFetch<SesionActividad[]>(`/api/sesiones-actividad/`);
+}
+
 
 /**
  * Crea una nueva sesión de actividad.
@@ -37,16 +46,13 @@ export async function getSesionActividad(id: number): Promise<SesionActividad> {
  * @returns Una promesa que resuelve a la nueva SesionActividad creada.
  */
 export async function createSesionActividad(payload: CreateSesionActividadPayload): Promise<SesionActividad> {
-  const res = await fetch(`${API_URL}/sesiones-actividad/`, {
+  // CAMBIO CLAVE AQUÍ: Solo la ruta relativa
+  const res = await authenticatedFetch<SesionActividad>(`/api/sesiones-actividad/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // authenticatedFetch ya establece 'Content-Type': 'application/json'
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(`Error al crear sesión de actividad: ${res.statusText} - ${JSON.stringify(errorData)}`);
-  }
-  return res.json();
+  return res; // authenticatedFetch ya maneja el res.json() y errores
 }
 
 /**
@@ -55,15 +61,12 @@ export async function createSesionActividad(payload: CreateSesionActividadPayloa
  * @returns Una promesa que resuelve a la SesionActividad actualizada.
  */
 export async function endSesionActividad(id: number): Promise<SesionActividad> {
-  const res = await fetch(`${API_URL}/sesiones-actividad/${id}/end_session/`, {
+  // CAMBIO CLAVE AQUÍ: Solo la ruta relativa
+  const res = await authenticatedFetch<SesionActividad>(`/api/sesiones-actividad/${id}/end_session/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" }, // Aunque no envíe body, es buena práctica
+    // authenticatedFetch ya establece 'Content-Type': 'application/json'
   });
-  if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(`Error al finalizar sesión de actividad: ${res.statusText} - ${JSON.stringify(errorData)}`);
-  }
-  return res.json();
+  return res; // authenticatedFetch ya maneja el res.json() y errores
 }
 
 /**
@@ -79,14 +82,10 @@ export async function sendEmotionFrame(sesionId: number, frameBase64: string, mo
     frame_base64: frameBase64,
     momento_segundo: momentoSegundo,
   };
-  const res = await fetch(`${API_URL}/emocion-detection/`, {
+  // CAMBIO CLAVE AQUÍ: Solo la ruta relativa
+  const res = await authenticatedFetch<any>(`/api/emocion-detection/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const errorData = await res.json();
-    throw new Error(`Error al enviar frame de emoción: ${res.statusText} - ${JSON.stringify(errorData)}`);
-  }
-  return res.json();
+  return res; // authenticatedFetch ya maneja el res.json() y errores
 }
